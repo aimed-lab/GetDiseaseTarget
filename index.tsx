@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { GoogleGenAI, Type, Chat, GenerateContentResponse } from "@google/genai";
 import { 
@@ -32,13 +33,190 @@ import {
   Search,
   Filter,
   Info,
-  Layers
+  Layers,
+  BookOpen,
+  ExternalLink,
+  FileText,
+  Pill,
+  Stethoscope,
+  Shield,
+  ZoomIn,
+  ZoomOut,
+  X,
+  Sliders,
+  Maximize2,
+  Share,
+  RotateCcw
 } from 'lucide-react';
 
 // --- Configuration ---
 const OPEN_TARGETS_API = 'https://api.platform.opentargets.org/api/v4/graphql';
 const ENRICHR_API = 'https://maayanlab.cloud/Enrichr';
+const PUBMED_API = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils';
 const HARDCODED_PASSWORD = "Sparc@2026";
+
+// --- Shaders ---
+
+const vertexShaderSource = `
+  attribute vec2 position;
+  varying vec2 vUv;
+  void main() {
+    vUv = position * 0.5 + 0.5;
+    gl_Position = vec4(position, 0.0, 1.0);
+  }
+`;
+
+const terrainFragmentShader = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D pointsTexture;
+  uniform sampler2D valuesTexture;
+  uniform int pointCount;
+  uniform float sigma;
+  uniform vec2 resolution;
+  uniform vec2 offset;
+  uniform float scale;
+
+  float gaussian2D(vec2 point, vec2 center) {
+    vec2 d = (point - center);
+    return exp(-(d.x * d.x + d.y * d.y) / (2.0 * sigma * sigma));
+  }
+
+  vec3 spectral(float value) {
+    float t = clamp((value + 1.0) / 2.0, 0.0, 1.0);
+    vec3 color;
+    if (t <= 0.2) color = mix(vec3(0.0, 0.1, 0.3), vec3(0.0, 0.4, 0.8), t/0.2);
+    else if (t <= 0.4) color = mix(vec3(0.0, 0.4, 0.8), vec3(0.1, 0.8, 0.9), (t-0.2)/0.2);
+    else if (t <= 0.6) color = mix(vec3(0.1, 0.8, 0.9), vec3(0.2, 0.9, 0.4), (t-0.4)/0.2);
+    else if (t <= 0.8) color = mix(vec3(0.2, 0.9, 0.4), vec3(1.0, 0.9, 0.2), (t-0.6)/0.2);
+    else color = mix(vec3(1.0, 0.9, 0.2), vec3(1.0, 0.2, 0.0), (t-0.8)/0.2);
+    return color;
+  }
+
+  void main() {
+    vec2 screenPos = vUv * resolution;
+    vec2 worldPos = (vec2(screenPos.x, resolution.y - screenPos.y) - offset) / scale;
+    float value = 0.0;
+    for(int i = 0; i < 2000; i++) {
+      if (i >= pointCount) break;
+      vec2 pt = texture2D(pointsTexture, vec2((float(i) + 0.5) / 1024.0, 0.5)).xy;
+      float val = texture2D(valuesTexture, vec2((float(i) + 0.5) / 1024.0, 0.5)).r;
+      value += val * gaussian2D(worldPos, pt);
+    }
+    
+    vec3 col = spectral(value);
+    // Enhance visibility of low data points while keeping background dark
+    float intensity = clamp(abs(value) * 3.0, 0.0, 1.0);
+    gl_FragColor = vec4(col, 0.7 * intensity + 0.1);
+  }
+`;
+
+const contourFragmentShader = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D pointsTexture;
+  uniform sampler2D valuesTexture;
+  uniform int pointCount;
+  uniform float sigma;
+  uniform vec2 resolution;
+  uniform vec2 offset;
+  uniform float scale;
+  uniform float lineThickness;
+  uniform float isolineSpacing;
+
+  float gaussian2D(vec2 point, vec2 center) {
+    vec2 d = (point - center);
+    return exp(-(d.x * d.x + d.y * d.y) / (2.0 * sigma * sigma));
+  }
+
+  void main() {
+    vec2 screenPos = vUv * resolution;
+    vec2 worldPos = (vec2(screenPos.x, resolution.y - screenPos.y) - offset) / scale;
+    float value = 0.0;
+    for(int i = 0; i < 2000; i++) {
+      if (i >= pointCount) break;
+      vec2 pt = texture2D(pointsTexture, vec2((float(i) + 0.5) / 1024.0, 0.5)).xy;
+      float val = texture2D(valuesTexture, vec2((float(i) + 0.5) / 1024.0, 0.5)).r;
+      value += val * gaussian2D(worldPos, pt);
+    }
+    float scaledValue = value / isolineSpacing;
+    float discreteValue = floor(scaledValue + 0.5);
+    float isoline = abs(scaledValue - discreteValue);
+    if (isoline < lineThickness) {
+      gl_FragColor = vec4(0.0, 0.8, 0.9, 1.0);
+    } else {
+      gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
+    }
+  }
+`;
+
+const peaksFragmentShader = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D pointsTexture;
+  uniform sampler2D valuesTexture;
+  uniform int pointCount;
+  uniform float sigma;
+  uniform vec2 resolution;
+  uniform vec2 offset;
+  uniform float scale;
+
+  float gaussian2D(vec2 point, vec2 center) {
+    vec2 d = (point - center);
+    return exp(-(d.x * d.x + d.y * d.y) / (2.0 * sigma * sigma));
+  }
+
+  void main() {
+    vec2 screenPos = vUv * resolution;
+    vec2 worldPos = (vec2(screenPos.x, resolution.y - screenPos.y) - offset) / scale;
+    float value = 0.0;
+    for(int i = 0; i < 2000; i++) {
+      if (i >= pointCount) break;
+      vec2 pt = texture2D(pointsTexture, vec2((float(i) + 0.5) / 1024.0, 0.5)).xy;
+      float val = texture2D(valuesTexture, vec2((float(i) + 0.5) / 1024.0, 0.5)).r;
+      value += val * gaussian2D(worldPos, pt);
+    }
+    if (value > 0.0) {
+      gl_FragColor = vec4(1.0, 0.8 * value, 0.0, 0.7);
+    } else {
+      discard;
+    }
+  }
+`;
+
+const valleyFragmentShader = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D pointsTexture;
+  uniform sampler2D valuesTexture;
+  uniform int pointCount;
+  uniform float sigma;
+  uniform vec2 resolution;
+  uniform vec2 offset;
+  uniform float scale;
+
+  float gaussian2D(vec2 point, vec2 center) {
+    vec2 d = (point - center);
+    return exp(-(d.x * d.x + d.y * d.y) / (2.0 * sigma * sigma));
+  }
+
+  void main() {
+    vec2 screenPos = vUv * resolution;
+    vec2 worldPos = (vec2(screenPos.x, resolution.y - screenPos.y) - offset) / scale;
+    float value = 0.0;
+    for(int i = 0; i < 2000; i++) {
+      if (i >= pointCount) break;
+      vec2 pt = texture2D(pointsTexture, vec2((float(i) + 0.5) / 1024.0, 0.5)).xy;
+      float val = texture2D(valuesTexture, vec2((float(i) + 0.5) / 1024.0, 0.5)).r;
+      value += val * gaussian2D(worldPos, pt);
+    }
+    if (value < 0.0) {
+      gl_FragColor = vec4(0.0, 0.5, 1.0, 0.7 * abs(value));
+    } else {
+      discard;
+    }
+  }
+`;
 
 // --- Types ---
 interface Pathway { id: string; label: string; }
@@ -51,11 +229,29 @@ interface Target {
   expressionScore: number;
   targetScore: number; 
   pathways: Pathway[];
+  x?: number;
+  y?: number;
+  vx?: number;
+  vy?: number;
+  value?: number;
+}
+interface DrugInfo {
+  name: string;
+  id: string;
+  phase: number;
+  mechanism: string;
+  status: string;
 }
 interface DiseaseInfo { id: string; name: string; }
 interface EnrichmentResult { term: string; pValue: number; combinedScore: number; genes: string[]; }
+interface PubMedStats {
+  total: number;
+  recent: number;
+  topPapers: { title: string; id: string; }[];
+}
 type Theme = 'dark' | 'light';
 type ViewMode = 'list' | 'enrichment' | 'graph' | 'terrain';
+type TerrainLayer = 'gaussian' | 'discrete' | 'water' | 'sky';
 
 interface ResearchContext {
   activeDisease: DiseaseInfo | null;
@@ -73,116 +269,72 @@ interface Message {
   options?: DiseaseInfo[];
 }
 
+// --- Utils ---
+const getSigmaForZoom = (scale: number) => 60.0 / scale; // Increased base sigma for better density
+const isPointInCircle = (px: number, py: number, cx: number, cy: number, r: number) => {
+  return Math.sqrt((px - cx) ** 2 + (py - cy) ** 2) < r;
+};
+const isPointInPolygon = (pt: {x:number, y:number}, poly: {x:number, y:number}[]) => {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x, yi = poly[i].y;
+    const xj = poly[j].x, yj = poly[j].y;
+    const intersect = ((yi > pt.y) !== (yj > pt.y)) && (pt.x < (xj - xi) * (pt.y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+};
+
 // --- API Service Logic ---
 
 const api = {
-  /** 
-   * STAGE 1: DISAMBIGUATION LOGIC
-   * Maps text to clinical IDs (EFO/MONDO).
-   */
   async searchDiseases(query: string): Promise<DiseaseInfo[]> {
     const GQL_QUERY = `
       query SearchDisease($queryString: String!) {
         search(queryString: $queryString, entityNames: ["disease"], page: {index: 0, size: 25}) {
-          hits {
-            id
-            name
-            description
-          }
+          hits { id name description }
         }
       }
     `;
-    
     try {
       const res = await fetch(OPEN_TARGETS_API, { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ 
-          query: GQL_QUERY,
-          variables: { queryString: query }
-        }) 
+        body: JSON.stringify({ query: GQL_QUERY, variables: { queryString: query } }) 
       });
-      
       const result = await res.json();
       let hits = result.data?.search?.hits || [];
-      
       if (hits.length === 0) {
-        const BROAD_QUERY = `
-          query BroadSearch($queryString: String!) {
-            search(queryString: $queryString, page: {index: 0, size: 25}) {
-              hits { id name entity }
-            }
-          }
-        `;
-        const broadRes = await fetch(OPEN_TARGETS_API, { 
-          method: 'POST', 
-          headers: { 'Content-Type': 'application/json' }, 
-          body: JSON.stringify({ query: BROAD_QUERY, variables: { queryString: query } }) 
-        });
+        const BROAD_QUERY = `query BroadSearch($queryString: String!) { search(queryString: $queryString, page: {index: 0, size: 25}) { hits { id name entity } } }`;
+        const broadRes = await fetch(OPEN_TARGETS_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: BROAD_QUERY, variables: { queryString: query } }) });
         const broadResult = await broadRes.json();
-        hits = (broadResult.data?.search?.hits || [])
-          .filter((h: any) => h.entity === 'disease' || h.entity === 'phenotype');
+        hits = (broadResult.data?.search?.hits || []).filter((h: any) => h.entity === 'disease' || h.entity === 'phenotype');
       }
-
       return hits.map((h: any) => ({ id: h.id, name: h.name }));
-    } catch (err) {
-      console.error("Clinical Search Protocol Failure:", err);
-      return [];
-    }
+    } catch (err) { return []; }
   },
 
-  /** 
-   * STAGE 3: TARGET DISCOVERY LOGIC
-   */
   async getGenes(efoId: string, size: number = 30, page: number = 0): Promise<Target[]> {
-    let resolvedId = efoId;
-
-    if (!efoId.includes('_') && !efoId.includes(':')) {
-      const resolution = await this.searchDiseases(efoId);
-      if (resolution.length > 0) {
-        resolvedId = resolution[0].id;
-      }
-    }
-
     const GQL_QUERY = `
-      query GetAssociatedTargets($resolvedId: String!, $size: Int!, $page: Int!) {
-        disease(efoId: $resolvedId) {
-          id
-          name
+      query GetAssociatedTargets($efoId: String!, $size: Int!, $page: Int!) {
+        disease(efoId: $efoId) {
           associatedTargets(page: {index: $page, size: $size}) {
             rows {
-              target {
-                id
-                approvedSymbol
-                approvedName
-                pathways {
-                  pathway
-                }
-              }
+              target { id approvedSymbol approvedName pathways { pathway } }
               score
-              datatypeScores {
-                id
-                score
-              }
+              datatypeScores { id score }
             }
           }
         }
       }
     `;
-
     try {
       const res = await fetch(OPEN_TARGETS_API, { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ 
-          query: GQL_QUERY,
-          variables: { resolvedId, size, page }
-        }) 
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ query: GQL_QUERY, variables: { efoId, size, page } }) 
       });
       const data = await res.json();
-      const rows = data.data?.disease?.associatedTargets?.rows;
-      if (!rows || rows.length === 0) return [];
-      
+      const rows = data.data?.disease?.associatedTargets?.rows || [];
       return rows.map((r: any) => ({
         id: r.target.id,
         symbol: r.target.approvedSymbol,
@@ -193,10 +345,23 @@ const api = {
         targetScore: r.datatypeScores.find((s:any) => s.id.includes('drug'))?.score || 0,
         pathways: r.target.pathways?.map((p:any) => ({ id: p.pathway, label: p.pathway })) || []
       }));
-    } catch (err) {
-      console.error("Target Discovery Protocol Failure:", err);
-      return [];
-    }
+    } catch (err) { return []; }
+  },
+
+  async getTargetDrugs(ensemblId: string): Promise<DrugInfo[]> {
+    const GQL_QUERY = `query GetTargetDrugs($ensemblId: String!) { target(ensemblId: $ensemblId) { knownDrugs { rows { drug { id name mechanismsOfAction { rows { mechanismOfAction } } } status phase } } } }`;
+    try {
+      const res = await fetch(OPEN_TARGETS_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: GQL_QUERY, variables: { ensemblId } }) });
+      const data = await res.json();
+      const rows = data.data?.target?.knownDrugs?.rows || [];
+      return rows.map((r: any) => ({
+        id: r.drug.id,
+        name: r.drug.name,
+        phase: r.phase,
+        status: r.status,
+        mechanism: r.drug.mechanismsOfAction?.rows[0]?.mechanismOfAction || "Unknown Mechanism"
+      }));
+    } catch (e) { return []; }
   },
 
   async getEnrichment(genes: string[]): Promise<EnrichmentResult[]> {
@@ -209,30 +374,32 @@ const api = {
       const enRes = await fetch(`${ENRICHR_API}/enrich?userListId=${addData.userListId}&backgroundType=KEGG_2021_Human`);
       const enData = await enRes.json();
       return enData['KEGG_2021_Human']?.map((r: any) => ({ term: r[1], pValue: r[2], combinedScore: r[4], genes: r[5] })) || [];
-    } catch (e) {
-      return [];
-    }
+    } catch (e) { return []; }
+  },
+
+  async getPubMedStats(symbol: string): Promise<PubMedStats> {
+    try {
+      const totalSearch = await fetch(`${PUBMED_API}/esearch.fcgi?db=pubmed&term=${symbol}[Gene]&retmode=json`);
+      const totalData = await totalSearch.json();
+      const total = parseInt(totalData.esearchresult.count || "0");
+      const recentSearch = await fetch(`${PUBMED_API}/esearch.fcgi?db=pubmed&term=${symbol}[Gene] AND ("2024"[Date - Publication] : "2025"[Date - Publication])&retmode=json`);
+      const recentData = await recentSearch.json();
+      const recent = parseInt(recentData.esearchresult.count || "0");
+      const recentIds = recentData.esearchresult.idlist.slice(0, 3).join(',');
+      let topPapers = [];
+      if (recentIds) {
+        const summarySearch = await fetch(`${PUBMED_API}/esummary.fcgi?db=pubmed&id=${recentIds}&retmode=json`);
+        const summaryData = await summarySearch.json();
+        topPapers = Object.keys(summaryData.result).filter(k => k !== 'uids').map(k => ({ title: summaryData.result[k].title, id: k }));
+      }
+      return { total, recent, topPapers };
+    } catch (e) { return { total: 0, recent: 0, topPapers: [] }; }
   }
-};
-
-// --- Utilities ---
-
-const formatAssistantText = (text: string) => {
-  return text
-    .replace(/^#+\s*(.*)$/gm, '<h4 class="text-cyan-500 font-black uppercase text-[11px] mb-2 tracking-widest">$1</h4>')
-    .replace(/\*\*(.*?)\*\*/g, '<span class="text-cyan-400 font-bold">$1</span>')
-    .replace(/[\*#]/g, '')
-    .replace(/\n/g, '<br />');
-};
-
-const formatPValue = (p: number) => {
-  if (p < 0.0001) return p.toExponential(2);
-  return p.toFixed(4);
 };
 
 // --- Visualization Components ---
 
-const KnowledgeGraph = ({ targets, diseaseName, selectedId, onSelect, theme }: { targets: Target[], diseaseName: string, selectedId?: string, onSelect: (t: Target | null) => void, theme: Theme }) => {
+const KnowledgeGraph = ({ targets, selectedId, onSelect, theme }: { targets: Target[], selectedId?: string, onSelect: (t: Target | null) => void, theme: Theme }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -248,44 +415,75 @@ const KnowledgeGraph = ({ targets, diseaseName, selectedId, onSelect, theme }: {
     resize();
     const w = canvas.width / dpr, h = canvas.height / dpr;
 
-    const root = { x: w / 2, y: h / 2, r: 32, label: diseaseName, color: '#f43f5e' };
-    const nodes = targets.slice(0, 60).map(t => ({
-      ...t, x: w/2 + (Math.random()-0.5)*400, y: h/2 + (Math.random()-0.5)*400,
-      vx: 0, vy: 0, r: 12 + (t.overallScore * 14),
-      color: t.overallScore > 0.6 ? '#a855f7' : '#0ea5e9'
+    // Simulation nodes
+    const nodes = targets.slice(0, 50).map((t, i) => ({
+      ...t, 
+      x: w/2 + (Math.random()-0.5)*400, 
+      y: h/2 + (Math.random()-0.5)*400,
+      vx: 0, vy: 0, r: 12 + (t.overallScore * 12),
+      color: t.overallScore > 0.6 ? '#c084fc' : '#22d3ee'
     }));
+
+    // Find links based on shared pathways
+    const links: { s: any, t: any, weight: number }[] = [];
+    for(let i=0; i<nodes.length; i++) {
+      for(let j=i+1; j<nodes.length; j++) {
+        const overlap = nodes[i].pathways.filter(p1 => nodes[j].pathways.some(p2 => p1.id === p2.id)).length;
+        if (overlap > 0) links.push({ s: nodes[i], t: nodes[j], weight: overlap });
+      }
+    }
 
     let ani: number;
     const tick = () => {
       ctx.clearRect(0, 0, w, h);
-      const focusNode = nodes.find(n => n.id === selectedId);
-
+      
+      // Forces
       nodes.forEach(n => {
-        nodes.forEach(o => { if (n !== o) { const dx = n.x - o.x, dy = n.y - o.y, d = Math.sqrt(dx*dx+dy*dy)||1; if (d < 90) { n.vx += dx/d*0.6; n.vy += dy/d*0.6; } } });
-        const dxR = root.x - n.x, dyR = root.y - n.y, dR = Math.sqrt(dxR*dxR+dyR*dyR)||1;
-        const targetD = 220; const pull = (dR - targetD) * 0.04; n.vx += dxR/dR*pull; n.vy += dyR/dR*pull;
-        if (focusNode && focusNode !== n) {
-          const shared = n.pathways.filter(p1 => focusNode.pathways.some(p2 => p1.id === p2.id)).length;
-          if (shared > 0) { const dxF = focusNode.x-n.x, dyF = focusNode.y-n.y, dF = Math.sqrt(dxF*dxF+dyF*dyF)||1; n.vx += dxF/dF*0.2*shared; n.vy += dyF/dF*0.2*shared; }
-        }
-        n.vx *= 0.85; n.vy *= 0.85; n.x += n.vx; n.y += n.vy;
+        // Repulsion
+        nodes.forEach(o => {
+          if (n === o) return;
+          const dx = n.x - o.x, dy = n.y - o.y, d = Math.sqrt(dx*dx+dy*dy) || 1;
+          if (d < 150) { n.vx += dx/d * 0.4; n.vy += dy/d * 0.4; }
+        });
+        // Center gravity
+        n.vx += (w/2 - n.x) * 0.005; n.vy += (h/2 - n.y) * 0.005;
+      });
+
+      links.forEach(l => {
+        // Attraction
+        const dx = l.t.x - l.s.x, dy = l.t.y - l.s.y, d = Math.sqrt(dx*dx+dy*dy) || 1;
+        const targetD = 100;
+        const force = (d - targetD) * 0.01 * l.weight;
+        l.s.vx += dx/d * force; l.s.vy += dy/d * force;
+        l.t.vx -= dx/d * force; l.t.vy -= dy/d * force;
       });
 
       nodes.forEach(n => {
-        const isSel = n.id === selectedId;
-        const isPartner = focusNode && n.pathways.some(p1 => focusNode.pathways.some(p2 => p1.id === p2.id));
-        ctx.globalAlpha = selectedId ? (isSel || isPartner ? 1.0 : 0.08) : 1.0;
-        ctx.beginPath(); ctx.moveTo(root.x, root.y); ctx.lineTo(n.x, n.y);
-        ctx.strokeStyle = theme === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.08)';
+        n.vx *= 0.9; n.vy *= 0.9;
+        n.x += n.vx; n.y += n.vy;
+      });
+
+      // Render links
+      links.forEach(l => {
+        ctx.beginPath(); ctx.moveTo(l.s.x, l.s.y); ctx.lineTo(l.t.x, l.t.y);
+        ctx.strokeStyle = theme === 'dark' ? `rgba(6, 182, 212, ${l.weight * 0.1})` : `rgba(0, 0, 0, ${l.weight * 0.05})`;
+        ctx.lineWidth = l.weight * 0.5;
         ctx.stroke();
-        ctx.beginPath(); ctx.arc(n.x, n.y, isSel ? n.r + 8 : n.r, 0, Math.PI*2);
-        ctx.fillStyle = isSel ? '#fff' : n.color; ctx.fill();
-        ctx.fillStyle = theme === 'dark' ? '#fff' : '#000'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
-        ctx.fillText(n.symbol, n.x, n.y + n.r + 18);
       });
-      ctx.globalAlpha = 1.0;
-      ctx.beginPath(); ctx.arc(root.x, root.y, root.r, 0, Math.PI*2); ctx.fillStyle = root.color; ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.fillText(root.label.substring(0, 15), root.x, root.y + 4);
+
+      // Render nodes
+      nodes.forEach(n => {
+        const isSel = n.symbol === selectedId;
+        ctx.beginPath(); ctx.arc(n.x, n.y, isSel ? n.r + 5 : n.r, 0, Math.PI * 2);
+        ctx.fillStyle = isSel ? '#fff' : n.color;
+        ctx.shadowBlur = isSel ? 20 : 0; ctx.shadowColor = '#fff';
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = theme === 'dark' ? '#fff' : '#000';
+        ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(n.symbol, n.x, n.y + (isSel ? n.r + 15 : n.r + 12));
+      });
+
       ani = requestAnimationFrame(tick);
     };
     tick();
@@ -293,170 +491,346 @@ const KnowledgeGraph = ({ targets, diseaseName, selectedId, onSelect, theme }: {
     const onClick = (e: MouseEvent) => {
       const rect = canvas.getBoundingClientRect();
       const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-      const hit = nodes.find(n => Math.sqrt((n.x-mx)**2 + (n.y-my)**2) < n.r + 20);
+      const hit = nodes.find(n => Math.sqrt((n.x - mx)**2 + (n.y - my)**2) < 20);
       onSelect(hit || null);
     };
     canvas.addEventListener('click', onClick);
     return () => { cancelAnimationFrame(ani); canvas.removeEventListener('click', onClick); };
-  }, [targets, diseaseName, selectedId, theme]);
+  }, [targets, selectedId, theme]);
 
-  return <div ref={containerRef} className="w-full h-full"><canvas ref={canvasRef} className="w-full h-full cursor-crosshair" /></div>;
-};
-
-const VisualLegend = ({ theme }: { theme: Theme }) => (
-  <div className={`absolute bottom-6 right-6 p-4 rounded-2xl border backdrop-blur-md shadow-lg z-20 ${theme === 'dark' ? 'bg-slate-900/80 border-slate-800' : 'bg-white/80 border-slate-200'}`}>
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-3">
-        <div className="w-3 h-3 rounded-full bg-[#22d3ee] shadow-[0_0_8px_rgba(34,211,238,0.5)]" />
-        <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Target Profile</span>
-      </div>
-      <div className="flex items-center gap-3">
-        <div className="w-3 h-3 rounded-full bg-[#c084fc] shadow-[0_0_8px_rgba(192,132,252,0.5)]" />
-        <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">High Affinity</span>
-      </div>
-      <div className="flex items-center gap-3">
-        <div className={`w-3 h-3 rounded-full border-2 ${theme === 'dark' ? 'bg-white border-[#22d3ee]' : 'bg-[#0e7490] border-[#22d3ee]'}`} />
-        <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Selected Node</span>
+  return (
+    <div ref={containerRef} className="w-full h-full relative">
+      <canvas ref={canvasRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
+      {/* Legend */}
+      <div className={`absolute bottom-6 right-6 p-4 rounded-2xl border backdrop-blur-md ${theme === 'dark' ? 'bg-slate-900/80 border-slate-800' : 'bg-white/80 border-slate-200'} space-y-2`}>
+        <div className="flex items-center gap-3">
+          <div className="w-3 h-3 rounded-full bg-[#c084fc]" />
+          <span className="text-[10px] font-black uppercase text-slate-500 tracking-widest">High Potential Targets (>0.6)</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="w-3 h-3 rounded-full bg-[#22d3ee]" />
+          <span className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Active Candidates</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="w-3 h-3 rounded-full bg-white border border-slate-500" />
+          <span className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Selected Focus</span>
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
-const GeneTerrain = ({ targets, onSelect, selectedId, theme }: { targets: Target[], onSelect: (t: Target) => void, selectedId: string | undefined, theme: Theme }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+const GeneTerrain = ({ targets, onSelect, selectedId, theme }: { targets: Target[], onSelect: (t: Target | null) => void, selectedId: string | undefined, theme: Theme }) => {
+  const glCanvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
+  const glRef = useRef<WebGLRenderingContext | null>(null);
+  const shadersRef = useRef<{ [key: string]: WebGLProgram }>({});
   
-  useEffect(() => {
-    const canvas = canvasRef.current; if (!canvas) return;
-    const ctx = canvas.getContext('2d'); if (!ctx) return;
-    
-    const resize = () => {
-      if (!containerRef.current) return;
-      const { width, height } = containerRef.current.getBoundingClientRect();
-      canvas.width = width * window.devicePixelRatio;
-      canvas.height = height * window.devicePixelRatio;
-      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-    };
-    resize();
+  const [viewport, setViewport] = useState({ scale: 1.0, offset: { x: 0, y: 0 } });
+  const [currentLayer, setCurrentLayer] = useState<TerrainLayer>('gaussian');
+  const [isolineSpacing, setIsolineSpacing] = useState(0.2);
+  const [lineThickness, setLineThickness] = useState(0.02);
+  const [isLassoActive, setIsLassoActive] = useState(false);
+  const [lassoPoints, setLassoPoints] = useState<{x:number, y:number}[]>([]);
+  const [dragging, setDragging] = useState(false);
+  const [lastMouse, setLastMouse] = useState<{x:number, y:number} | null>(null);
 
-    let nodes = targets.map((t, i) => ({ 
-      ...t, 
-      x: (Math.random() * 0.8 + 0.1) * (canvas.width / (window.devicePixelRatio || 1)), 
-      y: (Math.random() * 0.8 + 0.1) * (canvas.height / (window.devicePixelRatio || 1)), 
-      vx: 0, 
-      vy: 0, 
-      radius: 5 + (t.overallScore * 10) 
-    }));
-    
-    const links: any[] = [];
-    for (let i = 0; i < nodes.length; i++) {
-      for (let j = i + 1; j < nodes.length; j++) {
-        const intersection = nodes[i].pathways.filter(p1 => nodes[j].pathways.some(p2 => p1.id === p2.id));
-        if (intersection.length > 0) links.push({ source: i, target: j, strength: intersection.length });
-      }
+  const mappedTargets = useMemo(() => {
+    return targets.map((t, i) => {
+      const angle = (i / targets.length) * Math.PI * 2;
+      const dist = (0.2 + Math.random() * 0.5) * 350;
+      return {
+        ...t,
+        x: 400 + Math.cos(angle) * dist,
+        y: 300 + Math.sin(angle) * dist,
+        value: (t.overallScore - 0.5) * 2.0 
+      };
+    });
+  }, [targets]);
+
+  const initShader = (gl: WebGLRenderingContext, vs: string, fs: string) => {
+    const vShader = gl.createShader(gl.VERTEX_SHADER)!;
+    gl.shaderSource(vShader, vs);
+    gl.compileShader(vShader);
+    const fShader = gl.createShader(gl.FRAGMENT_SHADER)!;
+    gl.shaderSource(fShader, fs);
+    gl.compileShader(fShader);
+    const prog = gl.createProgram()!;
+    gl.attachShader(prog, vShader);
+    gl.attachShader(prog, fShader);
+    gl.linkProgram(prog);
+    return prog;
+  };
+
+  const draw = useCallback(() => {
+    const gl = glRef.current;
+    if (!gl || !glCanvasRef.current) return;
+
+    if (!shadersRef.current[currentLayer]) {
+      let fsSource = terrainFragmentShader;
+      if (currentLayer === 'discrete') fsSource = contourFragmentShader;
+      else if (currentLayer === 'water') fsSource = peaksFragmentShader;
+      else if (currentLayer === 'sky') fsSource = valleyFragmentShader;
+      shadersRef.current[currentLayer] = initShader(gl, vertexShaderSource, fsSource);
     }
 
-    const onClick = (e: MouseEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-      const hit = nodes.find(n => Math.sqrt((n.x - mx)**2 + (n.y - my)**2) < n.radius * 2);
-      if (hit) onSelect(hit);
-    };
-    canvas.addEventListener('click', onClick);
+    const prog = shadersRef.current[currentLayer];
+    gl.useProgram(prog);
 
-    let animationId: number;
-    const tick = () => {
-      const w = canvas.width / window.devicePixelRatio;
-      const h = canvas.height / window.devicePixelRatio;
-      ctx.clearRect(0, 0, w, h);
+    const pointsData = new Float32Array(1024 * 4);
+    const valuesData = new Float32Array(1024 * 4);
+    mappedTargets.forEach((t, i) => {
+      pointsData[i*4] = t.x!;
+      pointsData[i*4+1] = t.y!;
+      valuesData[i*4] = t.value!;
+    });
 
-      nodes.forEach(node => {
-        nodes.forEach(other => {
-          if (node === other) return;
-          const dx = node.x - other.x; const dy = node.y - other.y;
-          const d2 = dx*dx + dy*dy || 1;
-          const force = 15 / d2;
-          node.vx += dx * force; node.vy += dy * force;
-        });
-        node.vx += (w/2 - node.x) * 0.005; node.vy += (h/2 - node.y) * 0.005;
-        node.vx *= 0.92; node.vy *= 0.92;
-        node.x += node.vx; node.y += node.vy;
-        
-        node.x = Math.max(30, Math.min(w - 30, node.x));
-        node.y = Math.max(30, Math.min(h - 30, node.y));
-      });
+    const pointsTex = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, pointsTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1024, 1, 0, gl.RGBA, gl.FLOAT, pointsData);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 
-      ctx.strokeStyle = theme === 'dark' ? 'rgba(34, 211, 238, 0.1)' : 'rgba(8, 145, 178, 0.15)';
-      links.forEach(l => { 
-        const s = nodes[l.source], t = nodes[l.target]; 
-        ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(t.x, t.y); 
-        ctx.lineWidth = Math.min(l.strength, 3);
-        ctx.stroke(); 
-      });
+    const valuesTex = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, valuesTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1024, 1, 0, gl.RGBA, gl.FLOAT, valuesData);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 
-      nodes.forEach(node => {
-        ctx.beginPath(); ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
-        if (node.id === selectedId) {
-          ctx.fillStyle = theme === 'dark' ? '#fff' : '#0e7490';
-          ctx.strokeStyle = '#22d3ee';
-          ctx.lineWidth = 3;
-          ctx.stroke();
-        } else {
-          ctx.fillStyle = node.overallScore > 0.6 ? '#c084fc' : '#22d3ee';
-        }
+    gl.uniform1i(gl.getUniformLocation(prog, "pointsTexture"), 0);
+    gl.uniform1i(gl.getUniformLocation(prog, "valuesTexture"), 1);
+    gl.uniform1i(gl.getUniformLocation(prog, "pointCount"), mappedTargets.length);
+    gl.uniform1f(gl.getUniformLocation(prog, "sigma"), getSigmaForZoom(viewport.scale));
+    gl.uniform2f(gl.getUniformLocation(prog, "resolution"), 800, 600);
+    gl.uniform2f(gl.getUniformLocation(prog, "offset"), viewport.offset.x, viewport.offset.y);
+    gl.uniform1f(gl.getUniformLocation(prog, "scale"), viewport.scale);
+    
+    if (currentLayer === 'discrete') {
+      gl.uniform1f(gl.getUniformLocation(prog, "lineThickness"), lineThickness);
+      gl.uniform1f(gl.getUniformLocation(prog, "isolineSpacing"), isolineSpacing);
+    }
+
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+    const pos = gl.getAttribLocation(prog, "position");
+    gl.enableVertexAttribArray(pos);
+    gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+
+    gl.viewport(0, 0, 800, 600);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+    gl.deleteTexture(pointsTex);
+    gl.deleteTexture(valuesTex);
+    gl.deleteBuffer(buf);
+
+    const ctx = overlayCanvasRef.current?.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, 800, 600);
+      ctx.setTransform(viewport.scale, 0, 0, viewport.scale, viewport.offset.x, viewport.offset.y);
+
+      if (lassoPoints.length > 0) {
+        ctx.beginPath(); ctx.moveTo(lassoPoints[0].x, lassoPoints[0].y);
+        lassoPoints.forEach(p => ctx.lineTo(p.x, p.y));
+        ctx.strokeStyle = '#06b6d4'; ctx.lineWidth = 2 / viewport.scale; ctx.stroke();
+        if (!isLassoActive) { ctx.fillStyle = 'rgba(6, 182, 212, 0.1)'; ctx.fill(); }
+      }
+
+      mappedTargets.forEach(t => {
+        const isSelected = t.id === selectedId;
+        ctx.beginPath(); ctx.arc(t.x!, t.y!, (isSelected ? 8 : 4) / viewport.scale, 0, Math.PI * 2);
+        ctx.fillStyle = isSelected ? '#fff' : (theme === 'dark' ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.3)');
         ctx.fill();
-        
-        ctx.fillStyle = theme === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(15, 23, 42, 0.9)';
-        ctx.font = node.id === selectedId ? 'bold 10px sans-serif' : '9px sans-serif'; 
-        ctx.textAlign = 'center'; 
-        ctx.fillText(`${node.symbol}: ${node.name.substring(0, 15)}${node.name.length > 15 ? '...' : ''}`, node.x, node.y + node.radius + 12);
+        if (viewport.scale > 2) {
+          ctx.font = `${10 / viewport.scale}px sans-serif`;
+          ctx.fillStyle = theme === 'dark' ? '#fff' : '#000';
+          ctx.textAlign = 'center'; ctx.fillText(t.symbol, t.x!, t.y! + 12 / viewport.scale);
+        }
       });
-      animationId = requestAnimationFrame(tick);
-    };
-    tick(); return () => {
-      cancelAnimationFrame(animationId);
-      canvas.removeEventListener('click', onClick);
-    };
-  }, [targets, selectedId, theme, onSelect]);
+    }
+  }, [mappedTargets, viewport, currentLayer, isolineSpacing, lineThickness, lassoPoints, isLassoActive, selectedId, theme]);
+
+  useEffect(() => {
+    const canvas = glCanvasRef.current;
+    if (canvas) {
+      glRef.current = canvas.getContext('webgl', { preserveDrawingBuffer: true });
+      glRef.current?.getExtension('OES_texture_float');
+    }
+  }, []);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(frame);
+  }, [draw]);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    const rect = overlayCanvasRef.current!.getBoundingClientRect();
+    const x = (e.clientX - rect.left - viewport.offset.x) / viewport.scale;
+    const y = (e.clientY - rect.top - viewport.offset.y) / viewport.scale;
+    if (isLassoActive) setLassoPoints([{ x, y }]);
+    else {
+      const hit = mappedTargets.find(t => isPointInCircle(x, y, t.x!, t.y!, 10 / viewport.scale));
+      if (hit) onSelect(hit);
+      else { 
+        setDragging(true); 
+        setLastMouse({ x: e.clientX, y: e.clientY }); 
+      }
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    const rect = overlayCanvasRef.current!.getBoundingClientRect();
+    const x = (e.clientX - rect.left - viewport.offset.x) / viewport.scale;
+    const y = (e.clientY - rect.top - viewport.offset.y) / viewport.scale;
+    if (isLassoActive && lassoPoints.length > 0) setLassoPoints(prev => [...prev, { x, y }]);
+    else if (dragging && lastMouse) {
+      const dx = e.clientX - lastMouse.x;
+      const dy = e.clientY - lastMouse.y;
+      setViewport(prev => ({ 
+        ...prev, 
+        offset: { x: prev.offset.x + dx, y: prev.offset.y + dy } 
+      }));
+      setLastMouse({ x: e.clientX, y: e.clientY });
+    }
+  };
+
+  const handleMouseUp = () => {
+    if (isLassoActive && lassoPoints.length > 2) {
+      const selected = mappedTargets.filter(t => isPointInPolygon({x: t.x!, y: t.y!}, lassoPoints));
+      if (selected.length > 0) onSelect(selected[0]);
+      setIsLassoActive(false);
+    }
+    setDragging(false); setLastMouse(null);
+  };
+
+  const handleZoomToLevel = (level: number) => {
+    setViewport(prev => ({ ...prev, scale: level, offset: { x: 0, y: 0 } }));
+  };
 
   return (
-    <div ref={containerRef} className={`relative w-full h-full rounded-lg overflow-hidden border transition-colors duration-300 ${theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
-      <canvas ref={canvasRef} className="w-full h-full cursor-grab" />
-      <VisualLegend theme={theme} />
-    </div>
-  );
-};
+    <div className={`relative w-full h-full rounded-[3rem] overflow-hidden border ${theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+      <canvas ref={glCanvasRef} width={800} height={600} className="absolute inset-0 w-full h-full" />
+      <canvas 
+        ref={overlayCanvasRef} 
+        width={800} height={600} 
+        className={`absolute inset-0 w-full h-full ${dragging ? 'cursor-grabbing' : (isLassoActive ? 'cursor-crosshair' : 'cursor-grab')}`}
+        onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}
+        onWheel={e => setViewport(prev => ({ ...prev, scale: Math.max(0.1, Math.min(10, prev.scale * (e.deltaY > 0 ? 0.9 : 1.1))) }))}
+      />
+      
+      {/* Top Left Controls */}
+      <div className="absolute top-8 left-8 flex flex-col gap-4">
+        <div className={`p-2 rounded-3xl border backdrop-blur-md flex flex-col gap-2 ${theme === 'dark' ? 'bg-slate-900/60 border-slate-700' : 'bg-white/60 border-slate-300'}`}>
+          {[ { id: 'gaussian', icon: Globe2 }, { id: 'discrete', icon: Layers }, { id: 'water', icon: FlaskConical }, { id: 'sky', icon: Microscope } ].map(l => (
+            <button key={l.id} onClick={() => setCurrentLayer(l.id as TerrainLayer)} className={`p-3 rounded-2xl transition-all ${currentLayer === l.id ? 'bg-cyan-500 text-white shadow-lg scale-105' : 'text-slate-400 hover:bg-slate-500/10'}`}><l.icon className="w-5 h-5" /></button>
+          ))}
+        </div>
+      </div>
 
-// --- Authentication ---
+      {/* Bottom Control Bar */}
+      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-3 p-3 rounded-[2rem] border backdrop-blur-md bg-slate-900/40 border-slate-800 shadow-2xl">
+        <button onClick={() => setViewport({ scale: 1.0, offset: { x: 0, y: 0 } })} className="p-3 rounded-full hover:bg-slate-500/20 text-slate-400" title="Fit to screen">
+          <RotateCcw className="w-5 h-5" />
+        </button>
+        <div className="w-px h-6 bg-slate-800 mx-1" />
+        {[1, 2, 4].map(lvl => (
+          <button key={lvl} onClick={() => handleZoomToLevel(lvl)} className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${viewport.scale === lvl ? 'bg-cyan-500 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-500/10'}`}>
+            {lvl}x
+          </button>
+        ))}
+      </div>
 
-const SignInPage = ({ theme, toggleTheme, onSignIn }: { theme: Theme, toggleTheme: () => void, onSignIn: (user: string) => void }) => {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); if (password === HARDCODED_PASSWORD) onSignIn("research_principal"); else setError("Access Denied: Protocol Violation."); };
-  return (
-    <div className={`h-screen flex items-center justify-center transition-colors ${theme === 'dark' ? 'bg-slate-950 text-slate-200' : 'bg-slate-50 text-slate-900'}`}>
-      <div className={`w-full max-w-md p-10 rounded-[3rem] border ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-2xl'}`}>
-        <div className="flex flex-col items-center gap-6 mb-12"><div className="p-5 bg-cyan-500/10 rounded-full shadow-lg shadow-cyan-500/20"><Atom className="w-14 h-14 text-cyan-500 animate-pulse" /></div><h1 className="text-4xl font-black tracking-tighter">Get<span className="text-cyan-500">Gene</span></h1></div>
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase text-slate-500 ml-4 tracking-widest">Email Address</label>
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} className={`w-full p-5 rounded-3xl border outline-none text-center font-bold ${theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-transparent'}`} placeholder="user@uab.edu" />
-          </div>
-          <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase text-slate-500 ml-4 tracking-widest">Password</label>
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} className={`w-full p-5 rounded-3xl border outline-none text-center font-bold ${theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-transparent'}`} placeholder="••••••••" />
-          </div>
-          {error && <div className="text-rose-500 text-[10px] font-black uppercase text-center animate-bounce">{error}</div>}
-          <button type="submit" className="w-full p-5 bg-cyan-600 text-white rounded-3xl font-black uppercase text-xs tracking-widest shadow-xl hover:bg-cyan-500 transition-all hover:scale-[1.02]">Sign In</button>
-        </form>
-        <button onClick={toggleTheme} className="mt-10 mx-auto block p-3 hover:bg-slate-500/10 rounded-full">{theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}</button>
+      {/* Standard Zoom Controls */}
+      <div className="absolute bottom-8 right-8 flex gap-4">
+        <button onClick={() => setIsLassoActive(!isLassoActive)} className={`p-4 rounded-full shadow-2xl transition-all ${isLassoActive ? 'bg-cyan-500 text-white scale-110' : 'bg-white text-slate-900'}`}>
+          <Search className="w-6 h-6" />
+        </button>
+        <div className="flex bg-white rounded-full shadow-2xl overflow-hidden">
+          <button onClick={() => setViewport(v => ({ ...v, scale: Math.min(10, v.scale * 1.2) }))} className="p-4 border-r hover:bg-slate-100 text-slate-900"><ZoomIn className="w-6 h-6" /></button>
+          <button onClick={() => setViewport(v => ({ ...v, scale: Math.max(0.1, v.scale * 0.8) }))} className="p-4 hover:bg-slate-100 text-slate-900"><ZoomOut className="w-6 h-6" /></button>
+        </div>
       </div>
     </div>
   );
 };
 
-// --- Main Research Platform ---
+// --- Literature ---
+const LiteratureStats = ({ symbol, theme }: { symbol: string, theme: Theme }) => {
+  const [stats, setStats] = useState<PubMedStats | null>(null);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    let active = true;
+    const fetch = async () => {
+      setLoading(true);
+      const res = await api.getPubMedStats(symbol);
+      if (active) { setStats(res); setLoading(false); }
+    };
+    fetch(); return () => { active = false; };
+  }, [symbol]);
+  if (loading) return <div className="flex items-center gap-3 py-4 animate-pulse"><Loader2 className="w-4 h-4 animate-spin text-cyan-500" /><span className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Scanning PubMed...</span></div>;
+  if (!stats) return null;
+  return (
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom duration-500">
+      <div className="flex items-center gap-4 text-slate-500"><BookOpen className="w-5 h-5 text-cyan-500" /><h4 className="text-[12px] font-black uppercase tracking-[0.4em]">Literature Evidence</h4></div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="p-4 rounded-2xl bg-slate-950/20 border border-slate-800/50"><div className="text-[9px] font-black text-slate-500 uppercase mb-1 tracking-widest">Total Publications</div><div className="text-xl font-black text-white font-mono">{stats.total.toLocaleString()}</div></div>
+        <div className="p-4 rounded-2xl bg-cyan-500/5 border border-cyan-500/20"><div className="text-[9px] font-black text-cyan-500/70 uppercase mb-1 tracking-widest">Recent (2024-25)</div><div className="text-xl font-black text-cyan-400 font-mono">{stats.recent.toLocaleString()}</div></div>
+      </div>
+      <div className="space-y-3">
+        {stats.topPapers.map(p => (
+          <a key={p.id} href={`https://pubmed.ncbi.nlm.nih.gov/${p.id}/`} target="_blank" rel="noopener noreferrer" className={`flex items-start gap-3 p-4 rounded-2xl border transition-all hover:translate-x-1 ${theme === 'dark' ? 'bg-slate-950/40 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+            <FileText className="w-4 h-4 text-cyan-500 shrink-0 mt-0.5" />
+            <div className="space-y-1"><p className="text-[11px] font-bold leading-relaxed line-clamp-2 uppercase tracking-tight">{p.title}</p><div className="text-[9px] font-mono text-slate-500">PMID: {p.id}</div></div>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// --- Drug Landscape ---
+const DrugLandscape = ({ targetId, theme }: { targetId: string, theme: Theme }) => {
+  const [drugs, setDrugs] = useState<DrugInfo[]>([]);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    let active = true;
+    const fetch = async () => {
+      setLoading(true);
+      const res = await api.getTargetDrugs(targetId);
+      if (active) { setDrugs(res); setLoading(false); }
+    };
+    fetch(); return () => { active = false; };
+  }, [targetId]);
+  if (loading) return <div className="flex items-center gap-3 py-4 animate-pulse"><Loader2 className="w-4 h-4 animate-spin text-cyan-500" /><span className="text-[10px] font-black uppercase text-slate-500 tracking-widest">DrugBank Sync...</span></div>;
+  const approved = drugs.filter(d => d.phase === 4);
+  const experimental = drugs.filter(d => d.phase < 4);
+  return (
+    <div className="space-y-10">
+      <div className="flex items-center gap-4 text-slate-500"><Pill className="w-5 h-5 text-cyan-500" /><h4 className="text-[12px] font-black uppercase tracking-[0.4em]">Drug Landscape</h4></div>
+      <div className="space-y-8">
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 px-1"><ShieldCheck className="w-3.5 h-3.5 text-emerald-500" /><span className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Approved Modalities</span></div>
+          {approved.length > 0 ? approved.map(d => (
+            <div key={d.id} className={`p-4 rounded-3xl border ${theme === 'dark' ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-emerald-50 border-emerald-200'}`}><div className="flex items-center justify-between mb-2"><span className="text-[12px] font-black text-emerald-500 uppercase tracking-tight">{d.name}</span><span className="px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[8px] font-black uppercase">PHASE IV</span></div><p className="text-[10px] font-bold text-slate-500 uppercase">{d.mechanism}</p></div>
+          )) : <div className="p-4 rounded-3xl border border-dashed border-slate-800 text-[10px] text-slate-600 font-black uppercase text-center opacity-40">No Approved Pharmacotherapy</div>}
+        </div>
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 px-1"><FlaskConical className="w-3.5 h-3.5 text-amber-500" /><span className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Experimental pipeline</span></div>
+          <div className="space-y-3 max-h-40 overflow-y-auto pr-2 scrollbar-thin">
+            {experimental.map(d => (
+              <div key={d.id} className={`p-4 rounded-3xl border ${theme === 'dark' ? 'bg-slate-950/40 border-slate-800' : 'bg-white border-slate-200'}`}><div className="flex items-center justify-between mb-2"><span className="text-[11px] font-black text-slate-300 uppercase tracking-tight">{d.name}</span><span className={`px-2 py-0.5 rounded-full text-white text-[8px] font-black uppercase ${d.phase === 3 ? 'bg-amber-600' : 'bg-blue-600'}`}>Phase {d.phase || 'E'}</span></div><p className="text-[10px] font-bold text-slate-500 uppercase">{d.mechanism}</p></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- Main App ---
 
 const App = () => {
   const [theme, setTheme] = useState<Theme>('dark');
@@ -464,14 +838,9 @@ const App = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [loading, setLoading] = useState(false);
   const [researchState, setResearchState] = useState<ResearchContext>({ 
-    activeDisease: null, 
-    targets: [], 
-    enrichment: [], 
-    limit: 30, 
-    currentPage: 0,
-    focusSymbol: null 
+    activeDisease: null, targets: [], enrichment: [], limit: 30, currentPage: 0, focusSymbol: null 
   });
-  const [messages, setMessages] = useState<Message[]>([ { role: 'assistant', content: "Welcome to GetGene Terminal - give me a disease query - source open targets kinda meaningful", timestamp: new Date() } ]);
+  const [messages, setMessages] = useState<Message[]>([ { role: 'assistant', content: "Welcome to GetGene Terminal. Enter a clinical condition to begin target discovery.", timestamp: new Date() } ]);
   const [chatInput, setChatInput] = useState("");
   const [isChatting, setIsChatting] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
@@ -484,80 +853,45 @@ const App = () => {
       switch (name) {
         case 'search_diseases': {
           const options = await api.searchDiseases(args.query);
-          if (options.length === 0) return `Bio-Index search for "${args.query}" yielded 0 significant hits. Please try a specific medical synonym.`;
-          
+          if (options.length === 0) return `No clinical hits for "${args.query}".`;
           if (options.length === 1) {
             const opt = options[0];
             const genes = await api.getGenes(opt.id, 30, 0);
             const enrichment = await api.getEnrichment(genes.map(g => g.symbol));
-            const topGene = genes.length > 0 ? genes[0].symbol : null;
-            setResearchState(prev => ({ 
-              ...prev, 
-              targets: genes, 
-              enrichment, 
-              activeDisease: opt, 
-              focusSymbol: topGene,
-              currentPage: 0 
-            }));
-            return `Clinical Mapping: Resolved focus to "${opt.name}" (EFO ID: ${opt.id}). Automatically loading genomic associations and focusing on top-priority target ${topGene}. All analysis functions are now operational. Initial batch of 30 genes loaded.`;
+            setResearchState(prev => ({ ...prev, targets: genes, enrichment, activeDisease: opt, focusSymbol: genes[0]?.symbol || null, currentPage: 0 }));
+            return `Resolved focus to "${opt.name}". Loaded first 30 associations. Initial batch discovery complete.`;
           }
-
-          return { content: `Scanning complete. Found ${options.length} clinical subtypes for "${args.query}". Please select the exact focus:`, options };
+          return { content: `Found ${options.length} subtypes. Select focus:`, options };
         }
         case 'get_genes': {
           const genes = await api.getGenes(args.id, 30, 0);
-          if (genes.length === 0) return `Clinical Profile Sync Error: The term "${args.name}" (ID: ${args.id}) has no direct associations in the current release. I will attempt to resolve this name to a parent category for broader discovery.`;
           const enrichment = await api.getEnrichment(genes.map(g => g.symbol));
-          const topGene = genes.length > 0 ? genes[0].symbol : null;
-          setResearchState(prev => ({ 
-            ...prev, 
-            targets: genes, 
-            enrichment, 
-            activeDisease: { id: args.id, name: args.name }, 
-            focusSymbol: topGene,
-            currentPage: 0 
-          }));
-          return `Target Discovery Cycle Finished. Mapped first 30 associations for ${args.name}. Automatically focusing on candidate ${topGene} to populate the analysis sidebar.`;
+          setResearchState(prev => ({ ...prev, targets: genes, enrichment, activeDisease: { id: args.id, name: args.name }, focusSymbol: genes[0]?.symbol || null, currentPage: 0 }));
+          return `Mapped first 30 targets for ${args.name}. Ready for visualization.`;
         }
         case 'load_more_genes': {
-          const currentDisease = researchState.activeDisease;
-          if (!currentDisease) return "Protocol Error: No active disease profile identified. Please search for a condition first.";
-          
+          if (!researchState.activeDisease) return "Protocol Error: No active condition identified.";
           const nextPage = researchState.currentPage + 1;
-          const newGenes = await api.getGenes(currentDisease.id, 30, nextPage);
-          
-          if (newGenes.length === 0) return "End of Registry: No further genomic associations detected for this condition.";
-          
-          setResearchState(prev => ({ 
-            ...prev, 
-            targets: [...prev.targets, ...newGenes], 
-            currentPage: nextPage 
-          }));
-          
-          const updatedTargets = [...researchState.targets, ...newGenes];
-          const enrichment = await api.getEnrichment(updatedTargets.map(g => g.symbol));
-          setResearchState(prev => ({ ...prev, enrichment }));
-
-          return `Expansion Complete: Batch ${nextPage + 1} synchronized. Added ${newGenes.length} additional gene associations. Total mapped genes: ${updatedTargets.length}.`;
+          const newGenes = await api.getGenes(researchState.activeDisease.id, 30, nextPage);
+          if (newGenes.length === 0) return "Registry exhausted: No further associations found.";
+          const allGenes = [...researchState.targets, ...newGenes];
+          const enrichment = await api.getEnrichment(allGenes.map(g => g.symbol));
+          setResearchState(prev => ({ ...prev, targets: allGenes, enrichment, currentPage: nextPage }));
+          return `Batch ${nextPage + 1} synchronized. Added ${newGenes.length} genes. Total: ${allGenes.length}.`;
         }
         case 'update_view': {
           setViewMode(args.mode);
-          return `Visualization pipeline modified to ${args.mode}.`;
+          return `Switched visualization to ${args.mode}.`;
         }
-        default: return "Protocol acknowledged.";
+        default: return "Acknowledged.";
       }
-    } catch (err: any) {
-      return `Critical Protocol Error: ${err.message}`;
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) { return "Discovery Error."; } finally { setLoading(false); }
   }, [researchState]);
 
   const handleChat = async (e: React.FormEvent) => {
     e.preventDefault(); if (!chatInput.trim() || isChatting) return;
     const userMsg: Message = { role: 'user', content: chatInput, timestamp: new Date() };
     setMessages(prev => [...prev, userMsg]); setChatInput(""); setIsChatting(true);
-
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const tools = [
@@ -566,123 +900,98 @@ const App = () => {
         { name: 'load_more_genes', parameters: { type: Type.OBJECT, properties: {} } },
         { name: 'update_view', parameters: { type: Type.OBJECT, properties: { mode: { type: Type.STRING, enum: ['list', 'enrichment', 'graph', 'terrain'] } }, required: ['mode'] } }
       ];
-
       const response = await ai.models.generateContent({
         model: 'gemini-3-pro-preview',
         contents: [...messages, userMsg].map(m => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.content }] })),
-        config: { 
-          tools: [{ functionDeclarations: tools as any }],
-          systemInstruction: `You are GetGene Agentic AI, a clinical discovery researcher.
-          
-          DISCOVERY PROTOCOL:
-          1. STAGE 1: Call 'search_diseases' first for any new condition mentioned.
-          2. STAGE 2: If subtypes are returned, present them as clickable options.
-          3. STAGE 3: Call 'get_genes' with the EFO ID to load the initial batch of 30 genes.
-          4. BATCH DISCOVERY: If the user asks for more results, more genes, or the next batch, call 'load_more_genes'.
-          5. AGENTIC RESOLUTION: If the user says "Focus on [name]", call 'get_genes' with that name. The system will internally resolve it to an ID.
-          6. AUTO-FOCUS: When loading targets, always inform the user that the top candidate is being focused in the right-side analysis panel.
-          7. TONE: Precise, scientific. No markdown headers.`
-        }
+        config: { tools: [{ functionDeclarations: tools as any }], systemInstruction: "GetGene Clinical Agent. Use 'search_diseases' first. Use 'get_genes' once ID is known. Use 'load_more_genes' when asked for more results. Switch views with 'update_view'." }
       });
-
       if (response.functionCalls?.length) {
         for (const fc of response.functionCalls) {
           const res = await handleToolExecution(fc.name, fc.args);
-          const msgContent = typeof res === 'string' ? res : res.content;
-          const options = typeof res === 'string' ? undefined : res.options;
-          setMessages(prev => [...prev, { role: 'assistant', content: msgContent, options, timestamp: new Date() }]);
+          setMessages(prev => [...prev, { role: 'assistant', content: typeof res === 'string' ? res : res.content, options: typeof res === 'string' ? undefined : res.options, timestamp: new Date() }]);
         }
       } else {
-        setMessages(prev => [...prev, { role: 'assistant', content: response.text || "Synchronizing data layers...", timestamp: new Date() }]);
+        setMessages(prev => [...prev, { role: 'assistant', content: response.text || "Synchronizing...", timestamp: new Date() }]);
       }
-    } catch (e: any) { setMessages(prev => [...prev, { role: 'assistant', content: `Sync Error: ${e.message}.`, timestamp: new Date() }]); } finally { setIsChatting(false); }
+    } catch (e) { setMessages(prev => [...prev, { role: 'assistant', content: "Sync failed.", timestamp: new Date() }]); } finally { setIsChatting(false); }
   };
 
   const handleSelectOption = async (opt: DiseaseInfo) => {
-    const userConfirm: Message = { role: 'user', content: `Resolve focusing on: ${opt.name}`, timestamp: new Date() };
-    setMessages(prev => [...prev, userConfirm]);
+    setMessages(prev => [...prev, { role: 'user', content: `Focus: ${opt.name}`, timestamp: new Date() }]);
     const res = await handleToolExecution('get_genes', { id: opt.id, name: opt.name });
-    const msgContent = typeof res === 'string' ? res : res.content;
-    setMessages(prev => [...prev, { role: 'assistant', content: msgContent, timestamp: new Date() }]);
+    setMessages(prev => [...prev, { role: 'assistant', content: typeof res === 'string' ? res : res.content, timestamp: new Date() }]);
   };
 
   if (!isAuthenticated) return <SignInPage theme={theme} toggleTheme={() => setTheme(t=>t==='dark'?'light':'dark')} onSignIn={e => { localStorage.setItem('pharm_user', e); setIsAuthenticated(true); }} />;
 
   return (
-    <div className={`h-screen flex flex-col transition-colors duration-500 ${theme === 'dark' ? 'bg-slate-950 text-slate-200' : 'bg-slate-50 text-slate-900'}`}>
-      <header className={`px-8 py-5 flex items-center justify-between border-b ${theme === 'dark' ? 'bg-slate-900/80 border-slate-800 backdrop-blur-md' : 'bg-white/90 border-slate-200 backdrop-blur-md shadow-sm'}`}>
+    <div className={`h-screen flex flex-col transition-all duration-500 ${theme === 'dark' ? 'bg-slate-950 text-slate-200' : 'bg-slate-50 text-slate-900'}`}>
+      <header className={`px-8 py-5 flex items-center justify-between border-b ${theme === 'dark' ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
         <div className="flex items-center gap-10">
-          <div className="flex items-center gap-3"><Atom className="w-8 h-8 text-cyan-500 shadow-cyan-500/50" /><h1 className="text-2xl font-black tracking-tighter">Get<span className="text-cyan-500">Gene</span></h1></div>
-          {researchState.activeDisease && <div className="px-5 py-2 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-500 text-[10px] font-black uppercase tracking-[0.2em] shadow-xl shadow-cyan-500/10 animate-in fade-in slide-in-from-left duration-700">{researchState.activeDisease.name} PROFILE ACTIVE</div>}
+          <div className="flex items-center gap-3"><Atom className="w-8 h-8 text-cyan-500" /><h1 className="text-2xl font-black tracking-tighter">Get<span className="text-cyan-500">Gene</span></h1></div>
+          {researchState.activeDisease && <div className="px-5 py-2 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-500 text-[10px] font-black uppercase tracking-[0.2em]">{researchState.activeDisease.name} PROFILE</div>}
         </div>
         <div className="flex items-center gap-6">
-          <button onClick={() => setTheme(t=>t==='dark'?'light':'dark')} className="p-3 hover:bg-slate-500/10 rounded-2xl transition-all active:scale-95">{theme === 'dark' ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5" />}</button>
+          <button onClick={() => setTheme(t=>t==='dark'?'light':'dark')} className="p-3 hover:bg-slate-500/10 rounded-2xl">{theme === 'dark' ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5" />}</button>
           <button onClick={() => { localStorage.removeItem('pharm_user'); setIsAuthenticated(false); }} className="p-3 hover:text-rose-500 transition-all"><LogOut className="w-5 h-5" /></button>
         </div>
       </header>
 
       <main className="flex-1 flex overflow-hidden">
         <aside className={`w-[400px] border-r flex flex-col shrink-0 ${theme === 'dark' ? 'bg-slate-900/30 border-slate-800' : 'bg-white'}`}>
-           <div className="p-6 border-b text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 flex items-center justify-between">
-             <div className="flex items-center gap-3 font-bold"><MessageSquare className="w-5 h-5 text-cyan-500" /> Research Intelligence</div>
-             <div className="flex gap-2"><div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse shadow-lg shadow-emerald-500/50" /></div>
-           </div>
+           <div className="p-6 border-b text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Research Terminal</div>
            <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-6 space-y-8 scrollbar-thin">
               {messages.map((m, i) => (
                 <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
-                  <div className={`max-w-[95%] p-6 rounded-[2.5rem] text-[14px] leading-[1.6] shadow-md transition-all ${m.role === 'user' ? 'bg-cyan-600 text-white rounded-tr-none' : (theme === 'dark' ? 'bg-slate-800 text-slate-200 rounded-tl-none border border-slate-700/50' : 'bg-slate-100 text-slate-800 rounded-tl-none')}`}>
-                    <div dangerouslySetInnerHTML={{ __html: formatAssistantText(m.content) }} />
+                  <div className={`max-w-[95%] p-6 rounded-[2rem] text-[13px] leading-relaxed ${m.role === 'user' ? 'bg-cyan-600 text-white' : 'bg-slate-800 border border-slate-700'}`}>
+                    {m.content}
                     {m.options && (
-                      <div className="mt-8 space-y-3">
-                        {m.options.map(opt => (
-                          <button key={opt.id} onClick={() => handleSelectOption(opt)} className="w-full p-5 rounded-[1.5rem] bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-left text-[11px] font-black uppercase transition-all flex items-center justify-between group active:scale-[0.98]">
-                            <span className="truncate pr-6">{opt.name}</span> <ChevronRight className="w-4.5 h-4.5 group-hover:translate-x-2 shrink-0 transition-transform text-cyan-500" />
-                          </button>
-                        ))}
+                      <div className="mt-4 space-y-2">
+                        {m.options.map(o => <button key={o.id} onClick={() => handleSelectOption(o)} className="w-full p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-left text-[11px] font-black uppercase hover:bg-cyan-500/30 transition-all">{o.name}</button>)}
                       </div>
                     )}
                   </div>
-                  <span className="text-[10px] font-black uppercase text-slate-500 mt-2.5 px-3 opacity-50 tracking-[0.2em]">{m.timestamp.toLocaleTimeString()}</span>
                 </div>
               ))}
-              {isChatting && <div className="flex items-center gap-4 text-cyan-500 px-4"><Loader2 className="w-5 h-5 animate-spin" /><span className="text-[11px] font-black uppercase tracking-[0.3em]">Mapping Bio-Signatures...</span></div>}
+              {isChatting && <div className="flex items-center gap-4 text-cyan-500 px-4"><Loader2 className="w-5 h-5 animate-spin" /><span className="text-[11px] font-black tracking-widest uppercase">Querying...</span></div>}
            </div>
-           <form onSubmit={handleChat} className="p-6 border-t"><div className="relative"><input type="text" value={chatInput} onChange={e=>setChatInput(e.target.value)} placeholder="Submit clinical search..." className={`w-full p-6 pr-16 text-sm rounded-[2rem] border outline-none transition-all ${theme === 'dark' ? 'bg-slate-950 border-slate-800 text-white focus:border-cyan-500' : 'bg-slate-100 border-transparent focus:bg-white focus:shadow-2xl'}`} /><button type="submit" disabled={isChatting} className={`absolute right-3 top-3 p-4 rounded-full transition-all ${isChatting ? 'bg-slate-500 cursor-not-allowed' : 'bg-cyan-600 hover:bg-cyan-500 text-white shadow-xl shadow-cyan-900/40 active:scale-90'}`}><Send className="w-5 h-5" /></button></div></form>
+           <form onSubmit={handleChat} className="p-6 border-t"><div className="relative"><input type="text" value={chatInput} onChange={e=>setChatInput(e.target.value)} placeholder="Condition discovery..." className="w-full p-6 pr-16 text-sm rounded-[2rem] border bg-slate-950 border-slate-800 outline-none focus:border-cyan-500" /><button type="submit" className="absolute right-3 top-3 p-4 rounded-full bg-cyan-600 text-white"><Send className="w-5 h-5" /></button></div></form>
         </aside>
 
         <section className="flex-1 flex flex-col p-10 overflow-hidden">
-           <div className="flex items-center justify-between mb-10">
-              <div className={`flex p-2 rounded-[2rem] border ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
-                {[ {id:'list',i:List,l:'GET list'}, {id:'enrichment',i:BarChart3,l:'Enrichment'}, {id:'graph',i:Share2,l:'Pathways'}, {id:'terrain',i:Layers,l:'Terrain'} ].map(t => (
-                  <button key={t.id} onClick={() => setViewMode(t.id as any)} className={`px-8 py-3 rounded-[1.5rem] text-[11px] font-black uppercase tracking-[0.3em] flex items-center gap-4 transition-all ${viewMode === t.id ? 'bg-cyan-500 text-white shadow-2xl shadow-cyan-500/30 scale-105' : 'text-slate-500 hover:text-cyan-500'}`}><t.i className="w-4.5 h-4.5" /> {t.l}</button>
+           <div className="flex items-center justify-between mb-10 overflow-x-auto">
+              <div className="flex p-2 rounded-[2rem] border bg-slate-900 border-slate-800 shrink-0">
+                {[ 
+                   {id:'list',i:List,l:'List'}, 
+                   {id:'enrichment',i:BarChart3,l:'Enrich'}, 
+                   {id:'graph',i:Share2,l:'Interaction Graph'}, 
+                   {id:'terrain',i:Globe2,l:'Terrain'} 
+                ].map(t => (
+                  <button key={t.id} onClick={() => setViewMode(t.id as any)} className={`px-8 py-3 rounded-[1.5rem] text-[11px] font-black uppercase tracking-[0.3em] flex items-center gap-4 transition-all ${viewMode === t.id ? 'bg-cyan-500 text-white shadow-lg' : 'text-slate-500 hover:text-cyan-400'}`}><t.i className="w-4.5 h-4.5" /> {t.l}</button>
                 ))}
               </div>
            </div>
 
-           <div className={`flex-1 rounded-[4rem] border overflow-hidden relative ${theme === 'dark' ? 'bg-slate-900/40 border-slate-800' : 'bg-white border-slate-200 shadow-2xl'}`}>
-              {loading && <div className="absolute inset-0 bg-slate-950/30 backdrop-blur-xl z-50 flex flex-col items-center justify-center gap-8 animate-in fade-in duration-300"><div className="relative"><Loader2 className="w-16 h-16 animate-spin text-cyan-500" /><div className="absolute inset-0 bg-cyan-500/20 blur-2xl animate-pulse" /></div><span className="text-[12px] font-black uppercase tracking-[0.5em] text-cyan-500">Retrieving Genomic Data Layer...</span></div>}
+           <div className="flex-1 rounded-[4rem] border border-slate-800 overflow-hidden relative bg-slate-900/40 shadow-2xl">
+              {loading && <div className="absolute inset-0 bg-slate-950/30 backdrop-blur-xl z-50 flex flex-col items-center justify-center gap-8"><Loader2 className="w-16 h-16 animate-spin text-cyan-500" /></div>}
               {researchState.targets.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center opacity-30 gap-12 group">
-                  <div className="relative"><DatabaseZap className="w-40 h-40 text-cyan-500 group-hover:scale-110 transition-transform duration-1000" /><div className="absolute inset-0 bg-cyan-500 blur-[100px] opacity-10" /></div>
-                  <p className="text-sm font-black uppercase tracking-[0.6em] text-center max-w-[450px] leading-[2.5]">Awaiting Discovery Protocol Initialization</p>
-                </div>
+                <div className="h-full flex flex-col items-center justify-center opacity-30 gap-8"><DatabaseZap className="w-40 h-40 text-cyan-500" /><p className="text-sm font-black uppercase tracking-[0.6em]">Awaiting Discovery Protocol</p></div>
               ) : (
                 <>
                   {viewMode === 'list' && (
                     <div className="h-full overflow-auto scrollbar-thin">
                       <table className="w-full text-left border-collapse">
-                        <thead className={`sticky top-0 z-10 text-[11px] font-black uppercase border-b backdrop-blur-2xl ${theme === 'dark' ? 'bg-slate-900/90 text-slate-500 border-slate-800' : 'bg-slate-50/90'}`}>
-                          <tr><th className="p-6 pl-12">GENE</th><th className="p-6">Description</th><th className="p-6 text-center">Genetics</th><th className="p-6 text-center">Expression</th><th className="p-6 text-center">Target score</th><th className="p-6 pr-12 text-right">Overall Score</th></tr>
+                        <thead className="sticky top-0 z-10 text-[11px] font-black uppercase border-b bg-slate-900/90 text-slate-500 border-slate-800">
+                          <tr><th className="p-6 pl-12">GENE</th><th className="p-6">Description</th><th className="p-6 text-center">Genetics</th><th className="p-6 text-center">RNA</th><th className="p-6 pr-12 text-right">Score</th></tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-800/10">
+                        <tbody className="divide-y divide-slate-800/20">
                           {researchState.targets.map(t => (
                             <tr key={t.id} onClick={()=>setResearchState(p=>({...p, focusSymbol: t.symbol}))} className={`cursor-pointer transition-all hover:bg-cyan-500/10 ${researchState.focusSymbol === t.symbol ? 'bg-cyan-500/15 border-l-4 border-cyan-500' : ''}`}>
-                              <td className="p-6 pl-12 font-black text-base tracking-tighter text-cyan-500">{t.symbol}</td>
-                              <td className="p-6 text-[12px] text-slate-500 font-bold max-w-[300px] truncate uppercase tracking-tight">{t.name}</td>
-                              <td className="p-6 text-center"><div className="px-4 py-1.5 rounded-xl border border-emerald-500/20 text-emerald-500 text-[11px] font-mono shadow-inner bg-emerald-500/5">{t.geneticScore > 0 ? t.geneticScore.toFixed(2) : '-'}</div></td>
-                              <td className="p-6 text-center"><div className="px-4 py-1.5 rounded-xl border border-blue-500/20 text-blue-500 text-[11px] font-mono shadow-inner bg-blue-500/5">{t.expressionScore > 0 ? t.expressionScore.toFixed(2) : '-'}</div></td>
-                              <td className="p-6 text-center"><div className="px-4 py-1.5 rounded-xl border border-amber-500/20 text-amber-500 text-[11px] font-mono shadow-inner bg-amber-500/5">{t.targetScore > 0 ? t.targetScore.toFixed(2) : '-'}</div></td>
-                              <td className="p-6 pr-12 text-right font-black font-mono text-cyan-400 text-sm tracking-[0.2em]">{t.overallScore > 0 ? t.overallScore.toFixed(4) : '-'}</td>
+                              <td className="p-6 pl-12 font-black text-cyan-500">{t.symbol}</td>
+                              <td className="p-6 text-[11px] uppercase truncate max-w-[200px]">{t.name}</td>
+                              <td className="p-6 text-center">{t.geneticScore.toFixed(2)}</td>
+                              <td className="p-6 text-center">{t.expressionScore.toFixed(2)}</td>
+                              <td className="p-6 pr-12 text-right font-mono font-black text-cyan-400">{t.overallScore.toFixed(4)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -690,22 +999,19 @@ const App = () => {
                     </div>
                   )}
                   {viewMode === 'enrichment' && (
-                    <div className="p-16 h-full overflow-auto space-y-16">
-                      <div className="flex items-center gap-6 border-b border-slate-800/10 pb-8"><FlaskConical className="w-8 h-8 text-cyan-500 shadow-xl shadow-cyan-500/20" /><h4 className="text-[14px] font-black uppercase tracking-[0.4em] text-slate-500">KEGG Pathway Enrichment Profile</h4></div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-24 gap-y-16">
-                        {researchState.enrichment.slice(0, 12).map((e, i) => (
-                          <div key={i} className="space-y-6 group transition-all hover:translate-x-3">
-                            <div className="flex justify-between items-baseline text-[13px]">
-                              <span className="font-black truncate max-w-[350px] group-hover:text-cyan-500 transition-colors uppercase tracking-tight">{e.term}</span>
-                              <span className="font-mono text-cyan-500 font-bold opacity-60">p: {formatPValue(e.pValue)}</span>
-                            </div>
-                            <div className="h-2 w-full bg-slate-800/10 rounded-full overflow-hidden shadow-inner"><div className="h-full bg-cyan-600 rounded-full transition-all duration-1000 shadow-[0_0_15px_rgba(6,182,212,0.6)]" style={{width:`${Math.min(100, e.combinedScore/1.5)}%`}} /></div>
+                    <div className="p-16 h-full overflow-auto space-y-12">
+                      <h4 className="text-[14px] font-black uppercase tracking-[0.4em] text-slate-500">KEGG Enrichment Profile</h4>
+                      <div className="grid grid-cols-2 gap-x-12 gap-y-12">
+                        {researchState.enrichment.map((e, i) => (
+                          <div key={i} className="space-y-3">
+                            <div className="flex justify-between text-[11px] uppercase font-black"><span>{e.term}</span><span className="text-cyan-500">p: {e.pValue.toExponential(2)}</span></div>
+                            <div className="h-2 bg-slate-800 rounded-full overflow-hidden"><div className="h-full bg-cyan-600 shadow-[0_0_15px_rgba(6,182,212,0.6)]" style={{width:`${Math.min(100, e.combinedScore/1.5)}%`}} /></div>
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
-                  {viewMode === 'graph' && <KnowledgeGraph targets={researchState.targets} diseaseName={researchState.activeDisease?.name || ""} selectedId={researchState.targets.find(t=>t.symbol===researchState.focusSymbol)?.id} onSelect={(t)=>setResearchState(p=>({...p, focusSymbol: t?.symbol || null}))} theme={theme} />}
+                  {viewMode === 'graph' && <KnowledgeGraph targets={researchState.targets} selectedId={researchState.focusSymbol || undefined} onSelect={(t)=>setResearchState(p=>({...p, focusSymbol: t?.symbol || null}))} theme={theme} />}
                   {viewMode === 'terrain' && <GeneTerrain targets={researchState.targets} selectedId={researchState.targets.find(t=>t.symbol===researchState.focusSymbol)?.id} onSelect={(t)=>setResearchState(p=>({...p, focusSymbol: t?.symbol || null}))} theme={theme} />}
                 </>
               )}
@@ -713,36 +1019,29 @@ const App = () => {
         </section>
 
         {researchState.focusSymbol && (
-          <aside className={`w-[480px] border-l p-12 flex flex-col gap-12 overflow-y-auto scrollbar-thin transition-all animate-in slide-in-from-right duration-700 ${theme === 'dark' ? 'bg-slate-900 border-slate-800 shadow-[-30px_0_60px_rgba(0,0,0,0.6)]' : 'bg-white shadow-[-15px_0_50px_rgba(0,0,0,0.08)]'}`}>
+          <aside className="w-[480px] border-l p-12 flex flex-col gap-12 overflow-y-auto scrollbar-thin bg-slate-900 border-slate-800 shadow-2xl">
              {(() => {
                const t = researchState.targets.find(x => x.symbol === researchState.focusSymbol);
                if (!t) return null;
                return (
                  <>
                    <div className="space-y-4">
-                     <div className="flex items-center justify-between border-b border-slate-800/20 pb-6"><h3 className="text-6xl font-black text-cyan-500 tracking-tighter drop-shadow-2xl animate-in zoom-in-50 duration-500">{t.symbol}</h3><div className="text-[11px] font-black text-slate-500 uppercase tracking-widest bg-slate-500/10 px-6 py-2 rounded-full border border-slate-800/20">Bio-Marker Profile</div></div>
-                     <p className="text-[15px] font-bold text-slate-500 uppercase leading-relaxed pt-2 opacity-90">{t.name}</p>
+                     <div className="flex items-center justify-between border-b border-slate-800 pb-6"><h3 className="text-6xl font-black text-cyan-500 tracking-tighter">{t.symbol}</h3><div className="text-[10px] font-black text-slate-500 uppercase tracking-widest bg-slate-800 px-6 py-2 rounded-full">Focused Candidate</div></div>
+                     <p className="text-[14px] font-bold text-slate-500 uppercase leading-relaxed">{t.name}</p>
                    </div>
-
                    <div className="grid grid-cols-2 gap-6">
-                     {[ {l:'Genomic Assoc',v:t.geneticScore, c:'emerald'}, {l:'RNA Signal',v:t.expressionScore, c:'blue'}, {l:'Drug Fit',v:t.targetScore, c:'amber'}, {l:'Cumulative',v:t.overallScore, c:'cyan'} ].map(s=>(
-                       <div key={s.l} className="p-7 rounded-[3rem] bg-slate-950/20 border border-slate-800/50 hover:border-cyan-500/40 hover:bg-cyan-500/5 transition-all shadow-2xl group">
-                         <div className="text-[11px] font-black text-slate-500 uppercase mb-4 tracking-[0.2em] group-hover:text-cyan-500 transition-colors">{s.l}</div>
-                         <div className={`text-3xl font-black font-mono text-${s.c}-500 group-hover:scale-110 transition-transform`}>{s.v > 0 ? s.v.toFixed(3) : '-'}</div>
+                     {[ {l:'Genetics',v:t.geneticScore, c:'emerald'}, {l:'RNA Signal',v:t.expressionScore, c:'blue'}, {l:'Drug Fit',v:t.targetScore, c:'amber'}, {l:'Cumulative',v:t.overallScore, c:'cyan'} ].map(s=>(
+                       <div key={s.l} className="p-6 rounded-[2rem] bg-slate-950 border border-slate-800">
+                         <div className="text-[10px] font-black text-slate-500 uppercase mb-3 tracking-widest">{s.l}</div>
+                         <div className={`text-3xl font-black font-mono text-${s.c}-500`}>{s.v.toFixed(3)}</div>
                        </div>
                      ))}
                    </div>
-
-                   <div className="space-y-8 pt-12 border-t border-slate-800/30">
-                     <div className="flex items-center gap-4 text-slate-500"><Network className="w-5 h-5 text-cyan-500" /><h4 className="text-[12px] font-black uppercase tracking-[0.4em]">Integrated Signaling Nodes</h4></div>
-                     <div className="flex flex-wrap gap-4">{t.pathways.length > 0 ? t.pathways.map((p,i)=>(
-                       <span key={i} className="px-5 py-2.5 rounded-[1.5rem] bg-cyan-500/10 border border-cyan-500/30 text-cyan-500 text-[11px] font-black uppercase tracking-tight hover:bg-cyan-500/30 hover:shadow-lg hover:shadow-cyan-500/10 transition-all cursor-default shadow-sm">{p.label}</span>
-                     )) : <span className="text-[11px] font-black uppercase opacity-20 italic">No specific signaling pathways identified</span>}</div>
-                   </div>
-
-                   <div className="mt-auto opacity-10 flex justify-center py-16 relative group">
-                      <Atom className="w-40 h-40 text-cyan-500 animate-[spin_15s_linear_infinite] group-hover:scale-125 transition-transform duration-1000" />
-                      <div className="absolute inset-0 flex items-center justify-center"><Dna className="w-12 h-12 text-cyan-500" /></div>
+                   <DrugLandscape targetId={t.id} theme={theme} />
+                   <LiteratureStats symbol={t.symbol} theme={theme} />
+                   <div className="space-y-4">
+                      <div className="flex items-center gap-4 text-slate-500"><Network className="w-5 h-5 text-cyan-500" /><h4 className="text-[11px] font-black uppercase tracking-widest">Signaling Pathways</h4></div>
+                      <div className="flex flex-wrap gap-2">{t.pathways.map((p,i)=><span key={i} className="px-4 py-2 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-500 text-[9px] font-black uppercase">{p.label}</span>)}</div>
                    </div>
                  </>
                )
@@ -750,6 +1049,24 @@ const App = () => {
           </aside>
         )}
       </main>
+    </div>
+  );
+};
+
+const SignInPage = ({ theme, toggleTheme, onSignIn }: { theme: Theme, toggleTheme: () => void, onSignIn: (user: string) => void }) => {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  return (
+    <div className={`h-screen flex items-center justify-center transition-all ${theme === 'dark' ? 'bg-slate-950 text-slate-200' : 'bg-slate-50 text-slate-900'}`}>
+      <div className={`w-full max-w-md p-10 rounded-[3rem] border ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-2xl'}`}>
+        <div className="flex flex-col items-center gap-6 mb-12"><div className="p-5 bg-cyan-500/10 rounded-full"><Atom className="w-14 h-14 text-cyan-500 animate-pulse" /></div><h1 className="text-4xl font-black tracking-tighter">Get<span className="text-cyan-500">Gene</span></h1></div>
+        <form onSubmit={e=>{e.preventDefault(); if(password===HARDCODED_PASSWORD) onSignIn("Researcher");}} className="space-y-6">
+          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} className="w-full p-5 rounded-3xl border bg-slate-950 border-slate-800 text-center font-bold" placeholder="Email" />
+          <input type="password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full p-5 rounded-3xl border bg-slate-950 border-slate-800 text-center font-bold" placeholder="••••••••" />
+          <button type="submit" className="w-full p-5 bg-cyan-600 text-white rounded-3xl font-black uppercase text-xs tracking-widest hover:bg-cyan-500 transition-all">Protocol Initiate</button>
+        </form>
+        <button onClick={toggleTheme} className="mt-10 mx-auto block p-3 hover:bg-slate-500/10 rounded-full">{theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}</button>
+      </div>
     </div>
   );
 };
