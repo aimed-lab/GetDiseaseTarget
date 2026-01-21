@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { GoogleGenAI, Type, Chat, GenerateContentResponse } from "@google/genai";
@@ -46,7 +45,9 @@ import {
   Sliders,
   Maximize2,
   Share,
-  RotateCcw
+  RotateCcw,
+  PanelLeft,
+  PanelRight
 } from 'lucide-react';
 
 // --- Configuration ---
@@ -843,6 +844,11 @@ const App = () => {
   const [messages, setMessages] = useState<Message[]>([ { role: 'assistant', content: "Welcome to GetGene Terminal. Enter a clinical condition to begin target discovery.", timestamp: new Date() } ]);
   const [chatInput, setChatInput] = useState("");
   const [isChatting, setIsChatting] = useState(false);
+  
+  // Sidebar state
+  const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
+  const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
+
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight; }, [messages]);
@@ -926,72 +932,169 @@ const App = () => {
 
   return (
     <div className={`h-screen flex flex-col transition-all duration-500 ${theme === 'dark' ? 'bg-slate-950 text-slate-200' : 'bg-slate-50 text-slate-900'}`}>
-      <header className={`px-8 py-5 flex items-center justify-between border-b ${theme === 'dark' ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
-        <div className="flex items-center gap-10">
-          <div className="flex items-center gap-3"><Atom className="w-8 h-8 text-cyan-500" /><h1 className="text-2xl font-black tracking-tighter">Get<span className="text-cyan-500">Gene</span></h1></div>
-          {researchState.activeDisease && <div className="px-5 py-2 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-500 text-[10px] font-black uppercase tracking-[0.2em]">{researchState.activeDisease.name} PROFILE</div>}
-        </div>
+      <header className={`px-8 py-4 flex items-center justify-between border-b transition-colors ${theme === 'dark' ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
         <div className="flex items-center gap-6">
-          <button onClick={() => setTheme(t=>t==='dark'?'light':'dark')} className="p-3 hover:bg-slate-500/10 rounded-2xl">{theme === 'dark' ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5" />}</button>
-          <button onClick={() => { localStorage.removeItem('pharm_user'); setIsAuthenticated(false); }} className="p-3 hover:text-rose-500 transition-all"><LogOut className="w-5 h-5" /></button>
+          <button 
+            onClick={() => setIsLeftSidebarOpen(!isLeftSidebarOpen)} 
+            className={`p-2 rounded-xl transition-all ${theme === 'dark' ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-600'}`}
+            title={isLeftSidebarOpen ? "Hide Research Terminal" : "Show Research Terminal"}
+          >
+            <PanelLeft className={`w-5 h-5 ${isLeftSidebarOpen ? 'text-cyan-500' : ''}`} />
+          </button>
+          
+          <div className="flex items-center gap-3">
+            <Atom className="w-8 h-8 text-cyan-500" />
+            <h1 className="text-2xl font-black tracking-tighter hidden sm:block">Get<span className="text-cyan-500">Gene</span></h1>
+          </div>
+          
+          {researchState.activeDisease && (
+            <div className="px-5 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-500 text-[9px] font-black uppercase tracking-[0.1em] hidden md:block">
+              {researchState.activeDisease.name}
+            </div>
+          )}
+        </div>
+        
+        <div className="flex items-center gap-4">
+          <button onClick={() => setTheme(t=>t==='dark'?'light':'dark')} className="p-2.5 hover:bg-slate-500/10 rounded-xl transition-all">
+            {theme === 'dark' ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5" />}
+          </button>
+          
+          <button 
+            onClick={() => setIsRightSidebarOpen(!isRightSidebarOpen)} 
+            className={`p-2 rounded-xl transition-all ${theme === 'dark' ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-600'}`}
+            title={isRightSidebarOpen ? "Hide Target Inspector" : "Show Target Inspector"}
+          >
+            <PanelRight className={`w-5 h-5 ${isRightSidebarOpen ? 'text-cyan-500' : ''}`} />
+          </button>
+          
+          <div className="w-px h-6 bg-slate-800 mx-2 hidden sm:block" />
+          
+          <button 
+            onClick={() => { localStorage.removeItem('pharm_user'); setIsAuthenticated(false); }} 
+            className="flex items-center gap-2 p-2 hover:text-rose-500 transition-all text-slate-500"
+          >
+            <LogOut className="w-5 h-5" />
+            <span className="text-[10px] font-black uppercase tracking-widest hidden lg:block">Sign Out</span>
+          </button>
         </div>
       </header>
 
-      <main className="flex-1 flex overflow-hidden">
-        <aside className={`w-[400px] border-r flex flex-col shrink-0 ${theme === 'dark' ? 'bg-slate-900/30 border-slate-800' : 'bg-white'}`}>
-           <div className="p-6 border-b text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Research Terminal</div>
+      <main className="flex-1 flex overflow-hidden relative">
+        {/* Left Sidebar - Research Terminal */}
+        <aside className={`border-r flex flex-col shrink-0 transition-all duration-300 ease-in-out overflow-hidden ${isLeftSidebarOpen ? 'w-[400px]' : 'w-0 opacity-0 pointer-events-none border-r-0'} ${theme === 'dark' ? 'bg-slate-900/30 border-slate-800' : 'bg-white border-slate-200'}`}>
+           <div className="p-6 border-b text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 whitespace-nowrap">Research Terminal</div>
            <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-6 space-y-8 scrollbar-thin">
               {messages.map((m, i) => (
                 <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
-                  <div className={`max-w-[95%] p-6 rounded-[2rem] text-[13px] leading-relaxed ${m.role === 'user' ? 'bg-cyan-600 text-white' : 'bg-slate-800 border border-slate-700'}`}>
+                  <div className={`max-w-[95%] p-6 rounded-[2rem] text-[13px] leading-relaxed shadow-sm ${m.role === 'user' ? 'bg-cyan-600 text-white' : (theme === 'dark' ? 'bg-slate-800 border border-slate-700' : 'bg-slate-100 border border-slate-200 text-slate-800')}`}>
                     {m.content}
                     {m.options && (
                       <div className="mt-4 space-y-2">
-                        {m.options.map(o => <button key={o.id} onClick={() => handleSelectOption(o)} className="w-full p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-left text-[11px] font-black uppercase hover:bg-cyan-500/30 transition-all">{o.name}</button>)}
+                        {m.options.map(o => (
+                          <button 
+                            key={o.id} 
+                            onClick={() => handleSelectOption(o)} 
+                            className="w-full p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-left text-[11px] font-black uppercase hover:bg-cyan-500/30 transition-all"
+                          >
+                            {o.name}
+                          </button>
+                        ))}
                       </div>
                     )}
                   </div>
                 </div>
               ))}
-              {isChatting && <div className="flex items-center gap-4 text-cyan-500 px-4"><Loader2 className="w-5 h-5 animate-spin" /><span className="text-[11px] font-black tracking-widest uppercase">Querying...</span></div>}
+              {isChatting && (
+                <div className="flex items-center gap-4 text-cyan-500 px-4">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span className="text-[11px] font-black tracking-widest uppercase">Querying...</span>
+                </div>
+              )}
            </div>
-           <form onSubmit={handleChat} className="p-6 border-t"><div className="relative"><input type="text" value={chatInput} onChange={e=>setChatInput(e.target.value)} placeholder="Condition discovery..." className="w-full p-6 pr-16 text-sm rounded-[2rem] border bg-slate-950 border-slate-800 outline-none focus:border-cyan-500" /><button type="submit" className="absolute right-3 top-3 p-4 rounded-full bg-cyan-600 text-white"><Send className="w-5 h-5" /></button></div></form>
+           <form onSubmit={handleChat} className="p-6 border-t">
+              <div className="relative">
+                <input 
+                  type="text" 
+                  value={chatInput} 
+                  onChange={e=>setChatInput(e.target.value)} 
+                  placeholder="Search disease..." 
+                  className={`w-full p-6 pr-16 text-sm rounded-[2rem] border outline-none focus:border-cyan-500 transition-all ${theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200 text-slate-900'}`} 
+                />
+                <button type="submit" className="absolute right-3 top-3 p-4 rounded-full bg-cyan-600 text-white shadow-lg hover:bg-cyan-500 transition-all">
+                  <Send className="w-5 h-5" />
+                </button>
+              </div>
+           </form>
         </aside>
 
-        <section className="flex-1 flex flex-col p-10 overflow-hidden">
-           <div className="flex items-center justify-between mb-10 overflow-x-auto">
-              <div className="flex p-2 rounded-[2rem] border bg-slate-900 border-slate-800 shrink-0">
+        {/* Center Section - Hub */}
+        <section className="flex-1 flex flex-col p-6 sm:p-10 overflow-hidden">
+           <div className="flex items-center justify-between mb-8 overflow-x-auto pb-2">
+              <div className={`flex p-2 rounded-[2rem] border shrink-0 ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
                 {[ 
                    {id:'list',i:List,l:'List'}, 
                    {id:'enrichment',i:BarChart3,l:'Enrich'}, 
                    {id:'graph',i:Share2,l:'Interaction Graph'}, 
-                   {id:'terrain',i:Globe2,l:'Terrain'} 
+                   {id:'terrain',i:Globe2,l:'Gene Terrain'} 
                 ].map(t => (
-                  <button key={t.id} onClick={() => setViewMode(t.id as any)} className={`px-8 py-3 rounded-[1.5rem] text-[11px] font-black uppercase tracking-[0.3em] flex items-center gap-4 transition-all ${viewMode === t.id ? 'bg-cyan-500 text-white shadow-lg' : 'text-slate-500 hover:text-cyan-400'}`}><t.i className="w-4.5 h-4.5" /> {t.l}</button>
+                  <button 
+                    key={t.id} 
+                    onClick={() => setViewMode(t.id as any)} 
+                    className={`px-6 sm:px-8 py-3 rounded-[1.5rem] text-[10px] sm:text-[11px] font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] flex items-center gap-3 transition-all ${viewMode === t.id ? 'bg-cyan-500 text-white shadow-lg' : 'text-slate-500 hover:text-cyan-400'}`}
+                  >
+                    <t.i className="w-4 h-4" /> {t.l}
+                  </button>
                 ))}
               </div>
+              
+              {!isLeftSidebarOpen && (
+                <button 
+                  onClick={() => setIsLeftSidebarOpen(true)}
+                  className={`p-3 rounded-full hidden sm:flex border ${theme === 'dark' ? 'bg-slate-900 border-slate-800 text-slate-500 hover:text-white' : 'bg-white border-slate-200 text-slate-400 hover:text-cyan-600'}`}
+                >
+                  <MessageSquare className="w-5 h-5" />
+                </button>
+              )}
            </div>
 
-           <div className="flex-1 rounded-[4rem] border border-slate-800 overflow-hidden relative bg-slate-900/40 shadow-2xl">
-              {loading && <div className="absolute inset-0 bg-slate-950/30 backdrop-blur-xl z-50 flex flex-col items-center justify-center gap-8"><Loader2 className="w-16 h-16 animate-spin text-cyan-500" /></div>}
+           <div className={`flex-1 rounded-[3rem] sm:rounded-[4rem] border overflow-hidden relative shadow-2xl transition-all duration-300 ${theme === 'dark' ? 'bg-slate-900/40 border-slate-800' : 'bg-white border-slate-200'}`}>
+              {loading && (
+                <div className="absolute inset-0 bg-slate-950/30 backdrop-blur-xl z-50 flex flex-col items-center justify-center gap-8">
+                  <Loader2 className="w-16 h-16 animate-spin text-cyan-500" />
+                </div>
+              )}
+              
               {researchState.targets.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center opacity-30 gap-8"><DatabaseZap className="w-40 h-40 text-cyan-500" /><p className="text-sm font-black uppercase tracking-[0.6em]">Awaiting Discovery Protocol</p></div>
+                <div className="h-full flex flex-col items-center justify-center opacity-20 gap-8 text-center p-10">
+                  <DatabaseZap className="w-32 h-32 sm:w-40 sm:h-40 text-cyan-500" />
+                  <p className="text-sm font-black uppercase tracking-[0.4em] sm:tracking-[0.6em]">Awaiting Discovery Protocol</p>
+                </div>
               ) : (
                 <>
                   {viewMode === 'list' && (
                     <div className="h-full overflow-auto scrollbar-thin">
                       <table className="w-full text-left border-collapse">
-                        <thead className="sticky top-0 z-10 text-[11px] font-black uppercase border-b bg-slate-900/90 text-slate-500 border-slate-800">
-                          <tr><th className="p-6 pl-12">GENE</th><th className="p-6">Description</th><th className="p-6 text-center">Genetics</th><th className="p-6 text-center">RNA</th><th className="p-6 pr-12 text-right">Score</th></tr>
+                        <thead className={`sticky top-0 z-10 text-[10px] sm:text-[11px] font-black uppercase border-b text-slate-500 transition-colors ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                          <tr>
+                            <th className="p-4 sm:p-6 pl-8 sm:pl-12">GENE</th>
+                            <th className="p-4 sm:p-6 hidden lg:table-cell">Description</th>
+                            <th className="p-4 sm:p-6 text-center">Genetics</th>
+                            <th className="p-4 sm:p-6 text-center">RNA</th>
+                            <th className="p-4 sm:p-6 pr-8 sm:pr-12 text-right">Score</th>
+                          </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-800/20">
+                        <tbody className={`divide-y transition-colors ${theme === 'dark' ? 'divide-slate-800/20' : 'divide-slate-200'}`}>
                           {researchState.targets.map(t => (
-                            <tr key={t.id} onClick={()=>setResearchState(p=>({...p, focusSymbol: t.symbol}))} className={`cursor-pointer transition-all hover:bg-cyan-500/10 ${researchState.focusSymbol === t.symbol ? 'bg-cyan-500/15 border-l-4 border-cyan-500' : ''}`}>
-                              <td className="p-6 pl-12 font-black text-cyan-500">{t.symbol}</td>
-                              <td className="p-6 text-[11px] uppercase truncate max-w-[200px]">{t.name}</td>
-                              <td className="p-6 text-center">{t.geneticScore.toFixed(2)}</td>
-                              <td className="p-6 text-center">{t.expressionScore.toFixed(2)}</td>
-                              <td className="p-6 pr-12 text-right font-mono font-black text-cyan-400">{t.overallScore.toFixed(4)}</td>
+                            <tr 
+                              key={t.id} 
+                              onClick={()=>setResearchState(p=>({...p, focusSymbol: t.symbol}))} 
+                              className={`cursor-pointer transition-all hover:bg-cyan-500/10 ${researchState.focusSymbol === t.symbol ? (theme === 'dark' ? 'bg-cyan-500/15 border-l-4 border-cyan-500' : 'bg-cyan-50 border-l-4 border-cyan-500') : ''}`}
+                            >
+                              <td className="p-4 sm:p-6 pl-8 sm:pl-12 font-black text-cyan-500">{t.symbol}</td>
+                              <td className="p-4 sm:p-6 text-[10px] sm:text-[11px] uppercase truncate max-w-[150px] sm:max-w-[200px] hidden lg:table-cell">{t.name}</td>
+                              <td className="p-4 sm:p-6 text-center font-mono">{t.geneticScore.toFixed(2)}</td>
+                              <td className="p-4 sm:p-6 text-center font-mono">{t.expressionScore.toFixed(2)}</td>
+                              <td className="p-4 sm:p-6 pr-8 sm:pr-12 text-right font-mono font-black text-cyan-400">{(t.overallScore * 1).toFixed(4)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -999,13 +1102,18 @@ const App = () => {
                     </div>
                   )}
                   {viewMode === 'enrichment' && (
-                    <div className="p-16 h-full overflow-auto space-y-12">
-                      <h4 className="text-[14px] font-black uppercase tracking-[0.4em] text-slate-500">KEGG Enrichment Profile</h4>
-                      <div className="grid grid-cols-2 gap-x-12 gap-y-12">
+                    <div className="p-10 sm:p-16 h-full overflow-auto space-y-12">
+                      <h4 className="text-[12px] sm:text-[14px] font-black uppercase tracking-[0.3em] sm:tracking-[0.4em] text-slate-500">KEGG Enrichment Profile</h4>
+                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-12 gap-y-12">
                         {researchState.enrichment.map((e, i) => (
                           <div key={i} className="space-y-3">
-                            <div className="flex justify-between text-[11px] uppercase font-black"><span>{e.term}</span><span className="text-cyan-500">p: {e.pValue.toExponential(2)}</span></div>
-                            <div className="h-2 bg-slate-800 rounded-full overflow-hidden"><div className="h-full bg-cyan-600 shadow-[0_0_15px_rgba(6,182,212,0.6)]" style={{width:`${Math.min(100, e.combinedScore/1.5)}%`}} /></div>
+                            <div className="flex justify-between text-[10px] sm:text-[11px] uppercase font-black">
+                              <span className="truncate max-w-[70%]">{e.term}</span>
+                              <span className="text-cyan-500 font-mono">p: {e.pValue.toExponential(2)}</span>
+                            </div>
+                            <div className={`h-2 rounded-full overflow-hidden ${theme === 'dark' ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                              <div className="h-full bg-cyan-600 shadow-[0_0_15px_rgba(6,182,212,0.6)] transition-all duration-1000" style={{width:`${Math.min(100, e.combinedScore/1.5)}%`}} />
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1018,30 +1126,49 @@ const App = () => {
            </div>
         </section>
 
+        {/* Right Sidebar - Focused Target Info */}
         {researchState.focusSymbol && (
-          <aside className="w-[480px] border-l p-12 flex flex-col gap-12 overflow-y-auto scrollbar-thin bg-slate-900 border-slate-800 shadow-2xl">
+          <aside className={`border-l p-8 sm:p-12 flex flex-col gap-10 overflow-y-auto scrollbar-thin shadow-2xl transition-all duration-300 ease-in-out whitespace-nowrap overflow-hidden ${isRightSidebarOpen ? 'w-[480px]' : 'w-0 opacity-0 pointer-events-none border-l-0'} ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
              {(() => {
                const t = researchState.targets.find(x => x.symbol === researchState.focusSymbol);
                if (!t) return null;
                return (
                  <>
                    <div className="space-y-4">
-                     <div className="flex items-center justify-between border-b border-slate-800 pb-6"><h3 className="text-6xl font-black text-cyan-500 tracking-tighter">{t.symbol}</h3><div className="text-[10px] font-black text-slate-500 uppercase tracking-widest bg-slate-800 px-6 py-2 rounded-full">Focused Candidate</div></div>
-                     <p className="text-[14px] font-bold text-slate-500 uppercase leading-relaxed">{t.name}</p>
+                     <div className={`flex items-center justify-between border-b pb-6 ${theme === 'dark' ? 'border-slate-800' : 'border-slate-100'}`}>
+                       <h3 className="text-5xl sm:text-6xl font-black text-cyan-500 tracking-tighter">{t.symbol}</h3>
+                       <div className={`text-[9px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full ${theme === 'dark' ? 'text-slate-500 bg-slate-800' : 'text-slate-400 bg-slate-50'}`}>Candidate Profile</div>
+                     </div>
+                     <p className="text-[13px] sm:text-[14px] font-bold text-slate-500 uppercase leading-relaxed text-wrap">{t.name}</p>
                    </div>
-                   <div className="grid grid-cols-2 gap-6">
-                     {[ {l:'Genetics',v:t.geneticScore, c:'emerald'}, {l:'RNA Signal',v:t.expressionScore, c:'blue'}, {l:'Drug Fit',v:t.targetScore, c:'amber'}, {l:'Cumulative',v:t.overallScore, c:'cyan'} ].map(s=>(
-                       <div key={s.l} className="p-6 rounded-[2rem] bg-slate-950 border border-slate-800">
-                         <div className="text-[10px] font-black text-slate-500 uppercase mb-3 tracking-widest">{s.l}</div>
-                         <div className={`text-3xl font-black font-mono text-${s.c}-500`}>{s.v.toFixed(3)}</div>
+                   <div className="grid grid-cols-2 gap-4 sm:gap-6">
+                     {[ 
+                       {l:'Genetics',v:t.geneticScore, c:'emerald'}, 
+                       {l:'RNA Signal',v:t.expressionScore, c:'blue'}, 
+                       {l:'Drug Fit',v:t.targetScore, c:'amber'}, 
+                       {l:'Overall',v:t.overallScore, c:'cyan'} 
+                     ].map(s=>(
+                       <div key={s.l} className={`p-4 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border shadow-inner ${theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+                         <div className="text-[9px] font-black text-slate-500 uppercase mb-2 sm:mb-3 tracking-widest">{s.l}</div>
+                         <div className={`text-2xl sm:text-3xl font-black font-mono text-${s.c}-500`}>{s.v.toFixed(3)}</div>
                        </div>
                      ))}
                    </div>
                    <DrugLandscape targetId={t.id} theme={theme} />
                    <LiteratureStats symbol={t.symbol} theme={theme} />
                    <div className="space-y-4">
-                      <div className="flex items-center gap-4 text-slate-500"><Network className="w-5 h-5 text-cyan-500" /><h4 className="text-[11px] font-black uppercase tracking-widest">Signaling Pathways</h4></div>
-                      <div className="flex flex-wrap gap-2">{t.pathways.map((p,i)=><span key={i} className="px-4 py-2 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-500 text-[9px] font-black uppercase">{p.label}</span>)}</div>
+                      <div className="flex items-center gap-4 text-slate-500">
+                        <Network className="w-5 h-5 text-cyan-500" />
+                        <h4 className="text-[11px] font-black uppercase tracking-widest">Signaling Pathways</h4>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {t.pathways.slice(0, 10).map((p,i)=>(
+                          <span key={i} className={`px-4 py-1.5 rounded-full border text-[9px] font-black uppercase tracking-tighter ${theme === 'dark' ? 'bg-cyan-500/10 border-cyan-500/20 text-cyan-500' : 'bg-cyan-50 border-cyan-200 text-cyan-600'}`}>
+                            {p.label}
+                          </span>
+                        ))}
+                        {t.pathways.length > 10 && <span className="text-[10px] text-slate-500 font-bold self-center">+{t.pathways.length - 10} more</span>}
+                      </div>
                    </div>
                  </>
                )
@@ -1049,6 +1176,18 @@ const App = () => {
           </aside>
         )}
       </main>
+
+      {/* Footer / Status Bar */}
+      <footer className={`h-8 border-t flex items-center justify-between px-6 text-[10px] font-mono transition-colors ${theme === 'dark' ? 'bg-slate-950 border-slate-800 text-slate-500' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>
+        <div className="flex gap-6 overflow-hidden">
+          <span className="flex items-center gap-1.5 shrink-0"><DatabaseZap className="w-3 h-3" /> NODE: OT_PRIMARY_STREAM</span>
+          <span className="flex items-center gap-1.5 shrink-0 hidden sm:flex"><Network className="w-3 h-3" /> AGENT: STABLE_V1_0</span>
+        </div>
+        <div className="flex gap-6 items-center">
+          <span className="text-cyan-500 font-bold uppercase tracking-widest hidden lg:block">Researcher Access Level: Alpha</span>
+          <span className="bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded border border-emerald-500/20 uppercase font-black">Stream Active</span>
+        </div>
+      </footer>
     </div>
   );
 };
@@ -1058,14 +1197,46 @@ const SignInPage = ({ theme, toggleTheme, onSignIn }: { theme: Theme, toggleThem
   const [password, setPassword] = useState("");
   return (
     <div className={`h-screen flex items-center justify-center transition-all ${theme === 'dark' ? 'bg-slate-950 text-slate-200' : 'bg-slate-50 text-slate-900'}`}>
-      <div className={`w-full max-w-md p-10 rounded-[3rem] border ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-2xl'}`}>
-        <div className="flex flex-col items-center gap-6 mb-12"><div className="p-5 bg-cyan-500/10 rounded-full"><Atom className="w-14 h-14 text-cyan-500 animate-pulse" /></div><h1 className="text-4xl font-black tracking-tighter">Get<span className="text-cyan-500">Gene</span></h1></div>
+      <div className={`w-full max-w-md p-10 rounded-[3rem] border animate-in fade-in zoom-in duration-500 ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-2xl'}`}>
+        <div className="flex flex-col items-center gap-6 mb-12">
+          <div className="p-5 bg-cyan-500/10 rounded-full">
+            <Atom className="w-14 h-14 text-cyan-500 animate-pulse" />
+          </div>
+          <h1 className="text-4xl font-black tracking-tighter">Get<span className="text-cyan-500">Gene</span></h1>
+          <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.4em]">Advanced Target Discovery</p>
+        </div>
         <form onSubmit={e=>{e.preventDefault(); if(password===HARDCODED_PASSWORD) onSignIn("Researcher");}} className="space-y-6">
-          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} className="w-full p-5 rounded-3xl border bg-slate-950 border-slate-800 text-center font-bold" placeholder="Email" />
-          <input type="password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full p-5 rounded-3xl border bg-slate-950 border-slate-800 text-center font-bold" placeholder="••••••••" />
-          <button type="submit" className="w-full p-5 bg-cyan-600 text-white rounded-3xl font-black uppercase text-xs tracking-widest hover:bg-cyan-500 transition-all">Protocol Initiate</button>
+          <div className="space-y-4">
+            <input 
+              type="email" 
+              value={email} 
+              onChange={e=>setEmail(e.target.value)} 
+              className={`w-full p-5 rounded-3xl border text-center font-bold outline-none focus:border-cyan-500 transition-all ${theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200 text-slate-900'}`} 
+              placeholder="Researcher ID / Email" 
+            />
+            <input 
+              type="password" 
+              value={password} 
+              onChange={e=>setPassword(e.target.value)} 
+              className={`w-full p-5 rounded-3xl border text-center font-bold outline-none focus:border-cyan-500 transition-all ${theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200 text-slate-900'}`} 
+              placeholder="••••••••" 
+            />
+          </div>
+          <button 
+            type="submit" 
+            className="w-full p-5 bg-cyan-600 text-white rounded-3xl font-black uppercase text-xs tracking-[0.2em] hover:bg-cyan-500 transition-all shadow-lg active:scale-95 flex items-center justify-center gap-3"
+          >
+            <ShieldCheck className="w-4 h-4" />
+            Sign In
+          </button>
         </form>
-        <button onClick={toggleTheme} className="mt-10 mx-auto block p-3 hover:bg-slate-500/10 rounded-full">{theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}</button>
+        
+        <div className="mt-12 flex flex-col items-center gap-4">
+          <button onClick={toggleTheme} className="p-3 hover:bg-slate-500/10 rounded-full transition-all text-slate-500">
+            {theme === 'dark' ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5" />}
+          </button>
+          <div className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Protocol Version 1.0.42</div>
+        </div>
       </div>
     </div>
   );
