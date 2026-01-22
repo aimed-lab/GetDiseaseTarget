@@ -50,228 +50,35 @@ import {
   PanelRight
 } from 'lucide-react';
 
+import { 
+  Pathway, 
+  Target, 
+  DrugInfo, 
+  DiseaseInfo, 
+  EnrichmentResult, 
+  PubMedStats, 
+  Theme, 
+  ViewMode, 
+  TerrainLayer, 
+  ResearchContext, 
+  Message 
+} from './types';
+
+import { 
+  vertexShaderSource, 
+  terrainFragmentShader, 
+  contourFragmentShader, 
+  peaksFragmentShader, 
+  valleyFragmentShader 
+} from './shaders';
+
+import { api } from './api';
+
 // --- Configuration ---
-const OPEN_TARGETS_API = 'https://api.platform.opentargets.org/api/v4/graphql';
-const ENRICHR_API = 'https://maayanlab.cloud/Enrichr';
-const PUBMED_API = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils';
 const HARDCODED_PASSWORD = "Sparc@2026";
 
-// --- Shaders ---
-
-const vertexShaderSource = `
-  attribute vec2 position;
-  varying vec2 vUv;
-  void main() {
-    vUv = position * 0.5 + 0.5;
-    gl_Position = vec4(position, 0.0, 1.0);
-  }
-`;
-
-const terrainFragmentShader = `
-  precision highp float;
-  varying vec2 vUv;
-  uniform sampler2D pointsTexture;
-  uniform sampler2D valuesTexture;
-  uniform int pointCount;
-  uniform float sigma;
-  uniform vec2 resolution;
-  uniform vec2 offset;
-  uniform float scale;
-
-  float gaussian2D(vec2 point, vec2 center) {
-    vec2 d = (point - center);
-    return exp(-(d.x * d.x + d.y * d.y) / (2.0 * sigma * sigma));
-  }
-
-  vec3 spectral(float value) {
-    float t = clamp((value + 1.0) / 2.0, 0.0, 1.0);
-    vec3 color;
-    if (t <= 0.2) color = mix(vec3(0.0, 0.1, 0.3), vec3(0.0, 0.4, 0.8), t/0.2);
-    else if (t <= 0.4) color = mix(vec3(0.0, 0.4, 0.8), vec3(0.1, 0.8, 0.9), (t-0.2)/0.2);
-    else if (t <= 0.6) color = mix(vec3(0.1, 0.8, 0.9), vec3(0.2, 0.9, 0.4), (t-0.4)/0.2);
-    else if (t <= 0.8) color = mix(vec3(0.2, 0.9, 0.4), vec3(1.0, 0.9, 0.2), (t-0.6)/0.2);
-    else color = mix(vec3(1.0, 0.9, 0.2), vec3(1.0, 0.2, 0.0), (t-0.8)/0.2);
-    return color;
-  }
-
-  void main() {
-    vec2 screenPos = vUv * resolution;
-    vec2 worldPos = (vec2(screenPos.x, resolution.y - screenPos.y) - offset) / scale;
-    float value = 0.0;
-    for(int i = 0; i < 2000; i++) {
-      if (i >= pointCount) break;
-      vec2 pt = texture2D(pointsTexture, vec2((float(i) + 0.5) / 1024.0, 0.5)).xy;
-      float val = texture2D(valuesTexture, vec2((float(i) + 0.5) / 1024.0, 0.5)).r;
-      value += val * gaussian2D(worldPos, pt);
-    }
-    
-    vec3 col = spectral(value);
-    // Enhance visibility of low data points while keeping background dark
-    float intensity = clamp(abs(value) * 3.0, 0.0, 1.0);
-    gl_FragColor = vec4(col, 0.7 * intensity + 0.1);
-  }
-`;
-
-const contourFragmentShader = `
-  precision highp float;
-  varying vec2 vUv;
-  uniform sampler2D pointsTexture;
-  uniform sampler2D valuesTexture;
-  uniform int pointCount;
-  uniform float sigma;
-  uniform vec2 resolution;
-  uniform vec2 offset;
-  uniform float scale;
-  uniform float lineThickness;
-  uniform float isolineSpacing;
-
-  float gaussian2D(vec2 point, vec2 center) {
-    vec2 d = (point - center);
-    return exp(-(d.x * d.x + d.y * d.y) / (2.0 * sigma * sigma));
-  }
-
-  void main() {
-    vec2 screenPos = vUv * resolution;
-    vec2 worldPos = (vec2(screenPos.x, resolution.y - screenPos.y) - offset) / scale;
-    float value = 0.0;
-    for(int i = 0; i < 2000; i++) {
-      if (i >= pointCount) break;
-      vec2 pt = texture2D(pointsTexture, vec2((float(i) + 0.5) / 1024.0, 0.5)).xy;
-      float val = texture2D(valuesTexture, vec2((float(i) + 0.5) / 1024.0, 0.5)).r;
-      value += val * gaussian2D(worldPos, pt);
-    }
-    float scaledValue = value / isolineSpacing;
-    float discreteValue = floor(scaledValue + 0.5);
-    float isoline = abs(scaledValue - discreteValue);
-    if (isoline < lineThickness) {
-      gl_FragColor = vec4(0.0, 0.8, 0.9, 1.0);
-    } else {
-      gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
-    }
-  }
-`;
-
-const peaksFragmentShader = `
-  precision highp float;
-  varying vec2 vUv;
-  uniform sampler2D pointsTexture;
-  uniform sampler2D valuesTexture;
-  uniform int pointCount;
-  uniform float sigma;
-  uniform vec2 resolution;
-  uniform vec2 offset;
-  uniform float scale;
-
-  float gaussian2D(vec2 point, vec2 center) {
-    vec2 d = (point - center);
-    return exp(-(d.x * d.x + d.y * d.y) / (2.0 * sigma * sigma));
-  }
-
-  void main() {
-    vec2 screenPos = vUv * resolution;
-    vec2 worldPos = (vec2(screenPos.x, resolution.y - screenPos.y) - offset) / scale;
-    float value = 0.0;
-    for(int i = 0; i < 2000; i++) {
-      if (i >= pointCount) break;
-      vec2 pt = texture2D(pointsTexture, vec2((float(i) + 0.5) / 1024.0, 0.5)).xy;
-      float val = texture2D(valuesTexture, vec2((float(i) + 0.5) / 1024.0, 0.5)).r;
-      value += val * gaussian2D(worldPos, pt);
-    }
-    if (value > 0.0) {
-      gl_FragColor = vec4(1.0, 0.8 * value, 0.0, 0.7);
-    } else {
-      discard;
-    }
-  }
-`;
-
-const valleyFragmentShader = `
-  precision highp float;
-  varying vec2 vUv;
-  uniform sampler2D pointsTexture;
-  uniform sampler2D valuesTexture;
-  uniform int pointCount;
-  uniform float sigma;
-  uniform vec2 resolution;
-  uniform vec2 offset;
-  uniform float scale;
-
-  float gaussian2D(vec2 point, vec2 center) {
-    vec2 d = (point - center);
-    return exp(-(d.x * d.x + d.y * d.y) / (2.0 * sigma * sigma));
-  }
-
-  void main() {
-    vec2 screenPos = vUv * resolution;
-    vec2 worldPos = (vec2(screenPos.x, resolution.y - screenPos.y) - offset) / scale;
-    float value = 0.0;
-    for(int i = 0; i < 2000; i++) {
-      if (i >= pointCount) break;
-      vec2 pt = texture2D(pointsTexture, vec2((float(i) + 0.5) / 1024.0, 0.5)).xy;
-      float val = texture2D(valuesTexture, vec2((float(i) + 0.5) / 1024.0, 0.5)).r;
-      value += val * gaussian2D(worldPos, pt);
-    }
-    if (value < 0.0) {
-      gl_FragColor = vec4(0.0, 0.5, 1.0, 0.7 * abs(value));
-    } else {
-      discard;
-    }
-  }
-`;
-
-// --- Types ---
-interface Pathway { id: string; label: string; }
-interface Target {
-  id: string;
-  symbol: string;
-  name: string;
-  overallScore: number;
-  geneticScore: number;
-  expressionScore: number;
-  targetScore: number; 
-  pathways: Pathway[];
-  x?: number;
-  y?: number;
-  vx?: number;
-  vy?: number;
-  value?: number;
-}
-interface DrugInfo {
-  name: string;
-  id: string;
-  phase: number;
-  mechanism: string;
-  status: string;
-}
-interface DiseaseInfo { id: string; name: string; }
-interface EnrichmentResult { term: string; pValue: number; combinedScore: number; genes: string[]; }
-interface PubMedStats {
-  total: number;
-  recent: number;
-  topPapers: { title: string; id: string; }[];
-}
-type Theme = 'dark' | 'light';
-type ViewMode = 'list' | 'enrichment' | 'graph' | 'terrain';
-type TerrainLayer = 'gaussian' | 'discrete' | 'water' | 'sky';
-
-interface ResearchContext {
-  activeDisease: DiseaseInfo | null;
-  targets: Target[];
-  enrichment: EnrichmentResult[];
-  limit: number;
-  currentPage: number;
-  focusSymbol: string | null;
-}
-
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: Date;
-  options?: DiseaseInfo[];
-}
-
 // --- Utils ---
-const getSigmaForZoom = (scale: number) => 60.0 / scale; // Increased base sigma for better density
+const getSigmaForZoom = (scale: number) => 60.0 / scale;
 const isPointInCircle = (px: number, py: number, cx: number, cy: number, r: number) => {
   return Math.sqrt((px - cx) ** 2 + (py - cy) ** 2) < r;
 };
@@ -284,118 +91,6 @@ const isPointInPolygon = (pt: {x:number, y:number}, poly: {x:number, y:number}[]
     if (intersect) inside = !inside;
   }
   return inside;
-};
-
-// --- API Service Logic ---
-
-const api = {
-  async searchDiseases(query: string): Promise<DiseaseInfo[]> {
-    const GQL_QUERY = `
-      query SearchDisease($queryString: String!) {
-        search(queryString: $queryString, entityNames: ["disease"], page: {index: 0, size: 25}) {
-          hits { id name description }
-        }
-      }
-    `;
-    try {
-      const res = await fetch(OPEN_TARGETS_API, { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ query: GQL_QUERY, variables: { queryString: query } }) 
-      });
-      const result = await res.json();
-      let hits = result.data?.search?.hits || [];
-      if (hits.length === 0) {
-        const BROAD_QUERY = `query BroadSearch($queryString: String!) { search(queryString: $queryString, page: {index: 0, size: 25}) { hits { id name entity } } }`;
-        const broadRes = await fetch(OPEN_TARGETS_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: BROAD_QUERY, variables: { queryString: query } }) });
-        const broadResult = await broadRes.json();
-        hits = (broadResult.data?.search?.hits || []).filter((h: any) => h.entity === 'disease' || h.entity === 'phenotype');
-      }
-      return hits.map((h: any) => ({ id: h.id, name: h.name }));
-    } catch (err) { return []; }
-  },
-
-  async getGenes(efoId: string, size: number = 30, page: number = 0): Promise<Target[]> {
-    const GQL_QUERY = `
-      query GetAssociatedTargets($efoId: String!, $size: Int!, $page: Int!) {
-        disease(efoId: $efoId) {
-          associatedTargets(page: {index: $page, size: $size}) {
-            rows {
-              target { id approvedSymbol approvedName pathways { pathway } }
-              score
-              datatypeScores { id score }
-            }
-          }
-        }
-      }
-    `;
-    try {
-      const res = await fetch(OPEN_TARGETS_API, { 
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ query: GQL_QUERY, variables: { efoId, size, page } }) 
-      });
-      const data = await res.json();
-      const rows = data.data?.disease?.associatedTargets?.rows || [];
-      return rows.map((r: any) => ({
-        id: r.target.id,
-        symbol: r.target.approvedSymbol,
-        name: r.target.approvedName,
-        overallScore: r.score,
-        geneticScore: r.datatypeScores.find((s:any) => s.id.includes('genetic'))?.score || 0,
-        expressionScore: r.datatypeScores.find((s:any) => s.id.includes('rna'))?.score || 0,
-        targetScore: r.datatypeScores.find((s:any) => s.id.includes('drug'))?.score || 0,
-        pathways: r.target.pathways?.map((p:any) => ({ id: p.pathway, label: p.pathway })) || []
-      }));
-    } catch (err) { return []; }
-  },
-
-  async getTargetDrugs(ensemblId: string): Promise<DrugInfo[]> {
-    const GQL_QUERY = `query GetTargetDrugs($ensemblId: String!) { target(ensemblId: $ensemblId) { knownDrugs { rows { drug { id name mechanismsOfAction { rows { mechanismOfAction } } } status phase } } } }`;
-    try {
-      const res = await fetch(OPEN_TARGETS_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: GQL_QUERY, variables: { ensemblId } }) });
-      const data = await res.json();
-      const rows = data.data?.target?.knownDrugs?.rows || [];
-      return rows.map((r: any) => ({
-        id: r.drug.id,
-        name: r.drug.name,
-        phase: r.phase,
-        status: r.status,
-        mechanism: r.drug.mechanismsOfAction?.rows[0]?.mechanismOfAction || "Unknown Mechanism"
-      }));
-    } catch (e) { return []; }
-  },
-
-  async getEnrichment(genes: string[]): Promise<EnrichmentResult[]> {
-    if (genes.length === 0) return [];
-    try {
-      const formData = new FormData();
-      formData.append('list', genes.join('\n'));
-      const addRes = await fetch(`${ENRICHR_API}/addList`, { method: 'POST', body: formData });
-      const addData = await addRes.json();
-      const enRes = await fetch(`${ENRICHR_API}/enrich?userListId=${addData.userListId}&backgroundType=KEGG_2021_Human`);
-      const enData = await enRes.json();
-      return enData['KEGG_2021_Human']?.map((r: any) => ({ term: r[1], pValue: r[2], combinedScore: r[4], genes: r[5] })) || [];
-    } catch (e) { return []; }
-  },
-
-  async getPubMedStats(symbol: string): Promise<PubMedStats> {
-    try {
-      const totalSearch = await fetch(`${PUBMED_API}/esearch.fcgi?db=pubmed&term=${symbol}[Gene]&retmode=json`);
-      const totalData = await totalSearch.json();
-      const total = parseInt(totalData.esearchresult.count || "0");
-      const recentSearch = await fetch(`${PUBMED_API}/esearch.fcgi?db=pubmed&term=${symbol}[Gene] AND ("2024"[Date - Publication] : "2025"[Date - Publication])&retmode=json`);
-      const recentData = await recentSearch.json();
-      const recent = parseInt(recentData.esearchresult.count || "0");
-      const recentIds = recentData.esearchresult.idlist.slice(0, 3).join(',');
-      let topPapers = [];
-      if (recentIds) {
-        const summarySearch = await fetch(`${PUBMED_API}/esummary.fcgi?db=pubmed&id=${recentIds}&retmode=json`);
-        const summaryData = await summarySearch.json();
-        topPapers = Object.keys(summaryData.result).filter(k => k !== 'uids').map(k => ({ title: summaryData.result[k].title, id: k }));
-      }
-      return { total, recent, topPapers };
-    } catch (e) { return { total: 0, recent: 0, topPapers: [] }; }
-  }
 };
 
 // --- Visualization Components ---
@@ -416,7 +111,6 @@ const KnowledgeGraph = ({ targets, selectedId, onSelect, theme }: { targets: Tar
     resize();
     const w = canvas.width / dpr, h = canvas.height / dpr;
 
-    // Simulation nodes
     const nodes = targets.slice(0, 50).map((t, i) => ({
       ...t, 
       x: w/2 + (Math.random()-0.5)*400, 
@@ -425,7 +119,6 @@ const KnowledgeGraph = ({ targets, selectedId, onSelect, theme }: { targets: Tar
       color: t.overallScore > 0.6 ? '#c084fc' : '#22d3ee'
     }));
 
-    // Find links based on shared pathways
     const links: { s: any, t: any, weight: number }[] = [];
     for(let i=0; i<nodes.length; i++) {
       for(let j=i+1; j<nodes.length; j++) {
@@ -438,20 +131,16 @@ const KnowledgeGraph = ({ targets, selectedId, onSelect, theme }: { targets: Tar
     const tick = () => {
       ctx.clearRect(0, 0, w, h);
       
-      // Forces
       nodes.forEach(n => {
-        // Repulsion
         nodes.forEach(o => {
           if (n === o) return;
           const dx = n.x - o.x, dy = n.y - o.y, d = Math.sqrt(dx*dx+dy*dy) || 1;
           if (d < 150) { n.vx += dx/d * 0.4; n.vy += dy/d * 0.4; }
         });
-        // Center gravity
         n.vx += (w/2 - n.x) * 0.005; n.vy += (h/2 - n.y) * 0.005;
       });
 
       links.forEach(l => {
-        // Attraction
         const dx = l.t.x - l.s.x, dy = l.t.y - l.s.y, d = Math.sqrt(dx*dx+dy*dy) || 1;
         const targetD = 100;
         const force = (d - targetD) * 0.01 * l.weight;
@@ -464,7 +153,6 @@ const KnowledgeGraph = ({ targets, selectedId, onSelect, theme }: { targets: Tar
         n.x += n.vx; n.y += n.vy;
       });
 
-      // Render links
       links.forEach(l => {
         ctx.beginPath(); ctx.moveTo(l.s.x, l.s.y); ctx.lineTo(l.t.x, l.t.y);
         ctx.strokeStyle = theme === 'dark' ? `rgba(6, 182, 212, ${l.weight * 0.1})` : `rgba(0, 0, 0, ${l.weight * 0.05})`;
@@ -472,12 +160,11 @@ const KnowledgeGraph = ({ targets, selectedId, onSelect, theme }: { targets: Tar
         ctx.stroke();
       });
 
-      // Render nodes
       nodes.forEach(n => {
         const isSel = n.symbol === selectedId;
         ctx.beginPath(); ctx.arc(n.x, n.y, isSel ? n.r + 5 : n.r, 0, Math.PI * 2);
-        ctx.fillStyle = isSel ? '#fff' : n.color;
-        ctx.shadowBlur = isSel ? 20 : 0; ctx.shadowColor = '#fff';
+        ctx.fillStyle = isSel ? (theme === 'dark' ? '#fff' : '#000') : n.color;
+        ctx.shadowBlur = isSel ? 20 : 0; ctx.shadowColor = theme === 'dark' ? '#fff' : '#000';
         ctx.fill();
         ctx.shadowBlur = 0;
         ctx.fillStyle = theme === 'dark' ? '#fff' : '#000';
@@ -502,7 +189,6 @@ const KnowledgeGraph = ({ targets, selectedId, onSelect, theme }: { targets: Tar
   return (
     <div ref={containerRef} className="w-full h-full relative">
       <canvas ref={canvasRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
-      {/* Legend */}
       <div className={`absolute bottom-6 right-6 p-4 rounded-2xl border backdrop-blur-md ${theme === 'dark' ? 'bg-slate-900/80 border-slate-800' : 'bg-white/80 border-slate-200'} space-y-2`}>
         <div className="flex items-center gap-3">
           <div className="w-3 h-3 rounded-full bg-[#c084fc]" />
@@ -513,7 +199,7 @@ const KnowledgeGraph = ({ targets, selectedId, onSelect, theme }: { targets: Tar
           <span className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Active Candidates</span>
         </div>
         <div className="flex items-center gap-3">
-          <div className="w-3 h-3 rounded-full bg-white border border-slate-500" />
+          <div className={`w-3 h-3 rounded-full border ${theme === 'dark' ? 'bg-white border-slate-500' : 'bg-slate-900 border-slate-400'}`} />
           <span className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Selected Focus</span>
         </div>
       </div>
@@ -538,14 +224,13 @@ const GeneTerrain = ({ targets, onSelect, selectedId, theme }: { targets: Target
 
   const mappedTargets = useMemo(() => {
     return targets.map((t, i) => {
-      const angle = (i / targets.length) * Math.PI * 2;
-      const dist = (0.2 + Math.random() * 0.5) * 350;
-      return {
-        ...t,
-        x: 400 + Math.cos(angle) * dist,
-        y: 300 + Math.sin(angle) * dist,
-        value: (t.overallScore - 0.5) * 2.0 
-      };
+      const jitterX = Math.sin(i * 123.456) * 15;
+      const jitterY = Math.cos(i * 123.456) * 15;
+      const x = (t.geneticScore || 0) * 700 + 50 + jitterX;
+      const y = (t.targetScore || 0) * 500 + 50 + jitterY;
+      const e_star = t.combinedExpression || 0;
+      const val = (0.45 * (t.geneticScore || 0)) + (0.25 * e_star) + (0.30 * (t.targetScore || 0));
+      return { ...t, x, y, value: (val - 0.5) * 2.0 };
     });
   }, [targets]);
 
@@ -643,7 +328,7 @@ const GeneTerrain = ({ targets, onSelect, selectedId, theme }: { targets: Target
       mappedTargets.forEach(t => {
         const isSelected = t.id === selectedId;
         ctx.beginPath(); ctx.arc(t.x!, t.y!, (isSelected ? 8 : 4) / viewport.scale, 0, Math.PI * 2);
-        ctx.fillStyle = isSelected ? '#fff' : (theme === 'dark' ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.3)');
+        ctx.fillStyle = isSelected ? (theme === 'dark' ? '#fff' : '#000') : (theme === 'dark' ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.3)');
         ctx.fill();
         if (viewport.scale > 2) {
           ctx.font = `${10 / viewport.scale}px sans-serif`;
@@ -721,8 +406,6 @@ const GeneTerrain = ({ targets, onSelect, selectedId, theme }: { targets: Target
         onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}
         onWheel={e => setViewport(prev => ({ ...prev, scale: Math.max(0.1, Math.min(10, prev.scale * (e.deltaY > 0 ? 0.9 : 1.1))) }))}
       />
-      
-      {/* Top Left Controls */}
       <div className="absolute top-8 left-8 flex flex-col gap-4">
         <div className={`p-2 rounded-3xl border backdrop-blur-md flex flex-col gap-2 ${theme === 'dark' ? 'bg-slate-900/60 border-slate-700' : 'bg-white/60 border-slate-300'}`}>
           {[ { id: 'gaussian', icon: Globe2 }, { id: 'discrete', icon: Layers }, { id: 'water', icon: FlaskConical }, { id: 'sky', icon: Microscope } ].map(l => (
@@ -730,8 +413,6 @@ const GeneTerrain = ({ targets, onSelect, selectedId, theme }: { targets: Target
           ))}
         </div>
       </div>
-
-      {/* Bottom Control Bar */}
       <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-3 p-3 rounded-[2rem] border backdrop-blur-md bg-slate-900/40 border-slate-800 shadow-2xl">
         <button onClick={() => setViewport({ scale: 1.0, offset: { x: 0, y: 0 } })} className="p-3 rounded-full hover:bg-slate-500/20 text-slate-400" title="Fit to screen">
           <RotateCcw className="w-5 h-5" />
@@ -743,8 +424,6 @@ const GeneTerrain = ({ targets, onSelect, selectedId, theme }: { targets: Target
           </button>
         ))}
       </div>
-
-      {/* Standard Zoom Controls */}
       <div className="absolute bottom-8 right-8 flex gap-4">
         <button onClick={() => setIsLassoActive(!isLassoActive)} className={`p-4 rounded-full shadow-2xl transition-all ${isLassoActive ? 'bg-cyan-500 text-white scale-110' : 'bg-white text-slate-900'}`}>
           <Search className="w-6 h-6" />
@@ -759,32 +438,49 @@ const GeneTerrain = ({ targets, onSelect, selectedId, theme }: { targets: Target
 };
 
 // --- Literature ---
-const LiteratureStats = ({ symbol, theme }: { symbol: string, theme: Theme }) => {
+const LiteratureStats = ({ symbol, diseaseName, theme }: { symbol: string, diseaseName: string, theme: Theme }) => {
   const [stats, setStats] = useState<PubMedStats | null>(null);
   const [loading, setLoading] = useState(false);
   useEffect(() => {
     let active = true;
     const fetch = async () => {
       setLoading(true);
-      const res = await api.getPubMedStats(symbol);
+      const res = await api.getPubMedStats(symbol, diseaseName);
       if (active) { setStats(res); setLoading(false); }
     };
     fetch(); return () => { active = false; };
-  }, [symbol]);
+  }, [symbol, diseaseName]);
   if (loading) return <div className="flex items-center gap-3 py-4 animate-pulse"><Loader2 className="w-4 h-4 animate-spin text-cyan-500" /><span className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Scanning PubMed...</span></div>;
   if (!stats) return null;
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom duration-500">
-      <div className="flex items-center gap-4 text-slate-500"><BookOpen className="w-5 h-5 text-cyan-500" /><h4 className="text-[12px] font-black uppercase tracking-[0.4em]">Literature Evidence</h4></div>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4 text-slate-500">
+          <BookOpen className="w-5 h-5 text-cyan-500" />
+          <h4 className="text-[12px] font-black uppercase tracking-[0.4em]">Literature evidence</h4>
+        </div>
+        <a href={stats.searchLink} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-500 text-[9px] font-black uppercase tracking-widest hover:bg-cyan-500 hover:text-white transition-all">
+          View All <ExternalLink className="w-3 h-3" />
+        </a>
+      </div>
       <div className="grid grid-cols-2 gap-4">
-        <div className="p-4 rounded-2xl bg-slate-950/20 border border-slate-800/50"><div className="text-[9px] font-black text-slate-500 uppercase mb-1 tracking-widest">Total Publications</div><div className="text-xl font-black text-white font-mono">{stats.total.toLocaleString()}</div></div>
-        <div className="p-4 rounded-2xl bg-cyan-500/5 border border-cyan-500/20"><div className="text-[9px] font-black text-cyan-500/70 uppercase mb-1 tracking-widest">Recent (2024-25)</div><div className="text-xl font-black text-cyan-400 font-mono">{stats.recent.toLocaleString()}</div></div>
+        <div className={`p-4 rounded-2xl border ${theme === 'dark' ? 'bg-slate-950/20 border-slate-800/50' : 'bg-slate-50 border-slate-200'}`}>
+          <div className="text-[9px] font-black text-slate-500 uppercase mb-1 tracking-widest whitespace-normal leading-tight">Direct evidence (title/abstract-level)</div>
+          <div className={`text-xl font-black font-mono ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>{stats.total.toLocaleString()}</div>
+        </div>
+        <a href={stats.primarySearchLink} target="_blank" rel="noopener noreferrer" className={`p-4 rounded-2xl border transition-all hover:border-cyan-500/50 ${theme === 'dark' ? 'bg-cyan-500/5 border-cyan-500/20' : 'bg-cyan-50 border-cyan-100'}`}>
+          <div className="text-[9px] font-black text-cyan-500/70 uppercase mb-1 tracking-widest whitespace-normal leading-tight flex items-center justify-between">Primary gene–disease studies (2024-25) <ExternalLink className="w-2.5 h-2.5" /></div>
+          <div className="text-xl font-black text-cyan-500 font-mono">{stats.recent.toLocaleString()}</div>
+        </a>
       </div>
       <div className="space-y-3">
         {stats.topPapers.map(p => (
           <a key={p.id} href={`https://pubmed.ncbi.nlm.nih.gov/${p.id}/`} target="_blank" rel="noopener noreferrer" className={`flex items-start gap-3 p-4 rounded-2xl border transition-all hover:translate-x-1 ${theme === 'dark' ? 'bg-slate-950/40 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
             <FileText className="w-4 h-4 text-cyan-500 shrink-0 mt-0.5" />
-            <div className="space-y-1"><p className="text-[11px] font-bold leading-relaxed line-clamp-2 uppercase tracking-tight">{p.title}</p><div className="text-[9px] font-mono text-slate-500">PMID: {p.id}</div></div>
+            <div className="space-y-1 overflow-hidden">
+              <p className={`text-[11px] font-bold leading-relaxed line-clamp-2 uppercase tracking-tight whitespace-normal ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>{p.title}</p>
+              <div className="text-[9px] font-mono text-slate-500">PMID: {p.id}</div>
+            </div>
           </a>
         ))}
       </div>
@@ -822,7 +518,13 @@ const DrugLandscape = ({ targetId, theme }: { targetId: string, theme: Theme }) 
           <div className="flex items-center gap-3 px-1"><FlaskConical className="w-3.5 h-3.5 text-amber-500" /><span className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Experimental pipeline</span></div>
           <div className="space-y-3 max-h-40 overflow-y-auto pr-2 scrollbar-thin">
             {experimental.map(d => (
-              <div key={d.id} className={`p-4 rounded-3xl border ${theme === 'dark' ? 'bg-slate-950/40 border-slate-800' : 'bg-white border-slate-200'}`}><div className="flex items-center justify-between mb-2"><span className="text-[11px] font-black text-slate-300 uppercase tracking-tight">{d.name}</span><span className={`px-2 py-0.5 rounded-full text-white text-[8px] font-black uppercase ${d.phase === 3 ? 'bg-amber-600' : 'bg-blue-600'}`}>Phase {d.phase || 'E'}</span></div><p className="text-[10px] font-bold text-slate-500 uppercase">{d.mechanism}</p></div>
+              <div key={d.id} className={`p-4 rounded-3xl border ${theme === 'dark' ? 'bg-slate-950/40 border-slate-800' : 'bg-white border-slate-200'}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className={`text-[11px] font-black uppercase tracking-tight ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>{d.name}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-white text-[8px] font-black uppercase ${d.phase === 3 ? 'bg-amber-600' : 'bg-blue-600'}`}>Phase {d.phase || 'E'}</span>
+                </div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase">{d.mechanism}</p>
+              </div>
             ))}
           </div>
         </div>
@@ -841,11 +543,10 @@ const App = () => {
   const [researchState, setResearchState] = useState<ResearchContext>({ 
     activeDisease: null, targets: [], enrichment: [], limit: 30, currentPage: 0, focusSymbol: null 
   });
-  const [messages, setMessages] = useState<Message[]>([ { role: 'assistant', content: "Welcome to GetGene Terminal. Enter a clinical condition to begin target discovery.", timestamp: new Date() } ]);
+  const [messages, setMessages] = useState<Message[]>([ { role: 'assistant', content: "Discovery Platform Active. Initializing Alzheimer's Research Protocol. Enter a Clinical Query to map the GET Signal.", timestamp: new Date() } ]);
   const [chatInput, setChatInput] = useState("");
   const [isChatting, setIsChatting] = useState(false);
   
-  // Sidebar state
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
 
@@ -865,7 +566,7 @@ const App = () => {
             const genes = await api.getGenes(opt.id, 30, 0);
             const enrichment = await api.getEnrichment(genes.map(g => g.symbol));
             setResearchState(prev => ({ ...prev, targets: genes, enrichment, activeDisease: opt, focusSymbol: genes[0]?.symbol || null, currentPage: 0 }));
-            return `Resolved focus to "${opt.name}". Loaded first 30 associations. Initial batch discovery complete.`;
+            return `Resolved focus to "${opt.name}". Baseline expression and genetic evidence signals integrated. Discovery Topography available.`;
           }
           return { content: `Found ${options.length} subtypes. Select focus:`, options };
         }
@@ -873,7 +574,7 @@ const App = () => {
           const genes = await api.getGenes(args.id, 30, 0);
           const enrichment = await api.getEnrichment(genes.map(g => g.symbol));
           setResearchState(prev => ({ ...prev, targets: genes, enrichment, activeDisease: { id: args.id, name: args.name }, focusSymbol: genes[0]?.symbol || null, currentPage: 0 }));
-          return `Mapped first 30 targets for ${args.name}. Ready for visualization.`;
+          return `Mapped first 30 targets for ${args.name}. GET-Signal discovery protocol enabled. All tissue baseline signals synchronized.`;
         }
         case 'load_more_genes': {
           if (!researchState.activeDisease) return "Protocol Error: No active condition identified.";
@@ -883,11 +584,11 @@ const App = () => {
           const allGenes = [...researchState.targets, ...newGenes];
           const enrichment = await api.getEnrichment(allGenes.map(g => g.symbol));
           setResearchState(prev => ({ ...prev, targets: allGenes, enrichment, currentPage: nextPage }));
-          return `Batch ${nextPage + 1} synchronized. Added ${newGenes.length} genes. Total: ${allGenes.length}.`;
+          return `Batch ${nextPage + 1} synchronized. Full evidence profiles populated.`;
         }
         case 'update_view': {
           setViewMode(args.mode);
-          return `Switched visualization to ${args.mode}.`;
+          return `Switched visualization to ${args.mode}. Topography reflects evidence weights.`;
         }
         default: return "Acknowledged.";
       }
@@ -909,7 +610,7 @@ const App = () => {
       const response = await ai.models.generateContent({
         model: 'gemini-3-pro-preview',
         contents: [...messages, userMsg].map(m => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.content }] })),
-        config: { tools: [{ functionDeclarations: tools as any }], systemInstruction: "GetGene Clinical Agent. Use 'search_diseases' first. Use 'get_genes' once ID is known. Use 'load_more_genes' when asked for more results. Switch views with 'update_view'." }
+        config: { tools: [{ functionDeclarations: tools as any }], systemInstruction: "GetGene Clinical Agent. Specialized in Alzheimer's Target Discovery. Use 'search_diseases' first. Use 'get_genes' once ID is known. Interpret GET (Genetics, Expression, Tractability) signals. Maintain hypothesis-generating tone." }
       });
       if (response.functionCalls?.length) {
         for (const fc of response.functionCalls) {
@@ -937,50 +638,37 @@ const App = () => {
           <button 
             onClick={() => setIsLeftSidebarOpen(!isLeftSidebarOpen)} 
             className={`p-2 rounded-xl transition-all ${theme === 'dark' ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-600'}`}
-            title={isLeftSidebarOpen ? "Hide Research Terminal" : "Show Research Terminal"}
           >
             <PanelLeft className={`w-5 h-5 ${isLeftSidebarOpen ? 'text-cyan-500' : ''}`} />
           </button>
-          
           <div className="flex items-center gap-3">
             <Atom className="w-8 h-8 text-cyan-500" />
             <h1 className="text-2xl font-black tracking-tighter hidden sm:block">Get<span className="text-cyan-500">Gene</span></h1>
           </div>
-          
           {researchState.activeDisease && (
             <div className="px-5 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-500 text-[9px] font-black uppercase tracking-[0.1em] hidden md:block">
-              {researchState.activeDisease.name}
+              {researchState.activeDisease.name} - GET SIGNAL ENABLED
             </div>
           )}
         </div>
-        
         <div className="flex items-center gap-4">
           <button onClick={() => setTheme(t=>t==='dark'?'light':'dark')} className="p-2.5 hover:bg-slate-500/10 rounded-xl transition-all">
             {theme === 'dark' ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5" />}
           </button>
-          
           <button 
             onClick={() => setIsRightSidebarOpen(!isRightSidebarOpen)} 
             className={`p-2 rounded-xl transition-all ${theme === 'dark' ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-600'}`}
-            title={isRightSidebarOpen ? "Hide Target Inspector" : "Show Target Inspector"}
           >
             <PanelRight className={`w-5 h-5 ${isRightSidebarOpen ? 'text-cyan-500' : ''}`} />
           </button>
-          
           <div className="w-px h-6 bg-slate-800 mx-2 hidden sm:block" />
-          
-          <button 
-            onClick={() => { localStorage.removeItem('pharm_user'); setIsAuthenticated(false); }} 
-            className="flex items-center gap-2 p-2 hover:text-rose-500 transition-all text-slate-500"
-          >
+          <button onClick={() => { localStorage.removeItem('pharm_user'); setIsAuthenticated(false); }} className="flex items-center gap-2 p-2 hover:text-rose-500 transition-all text-slate-500">
             <LogOut className="w-5 h-5" />
-            <span className="text-[10px] font-black uppercase tracking-widest hidden lg:block">Sign Out</span>
           </button>
         </div>
       </header>
 
       <main className="flex-1 flex overflow-hidden relative">
-        {/* Left Sidebar - Research Terminal */}
         <aside className={`border-r flex flex-col shrink-0 transition-all duration-300 ease-in-out overflow-hidden ${isLeftSidebarOpen ? 'w-[400px]' : 'w-0 opacity-0 pointer-events-none border-r-0'} ${theme === 'dark' ? 'bg-slate-900/30 border-slate-800' : 'bg-white border-slate-200'}`}>
            <div className="p-6 border-b text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 whitespace-nowrap">Research Terminal</div>
            <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-6 space-y-8 scrollbar-thin">
@@ -991,13 +679,7 @@ const App = () => {
                     {m.options && (
                       <div className="mt-4 space-y-2">
                         {m.options.map(o => (
-                          <button 
-                            key={o.id} 
-                            onClick={() => handleSelectOption(o)} 
-                            className="w-full p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-left text-[11px] font-black uppercase hover:bg-cyan-500/30 transition-all"
-                          >
-                            {o.name}
-                          </button>
+                          <button key={o.id} onClick={() => handleSelectOption(o)} className="w-full p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-left text-[11px] font-black uppercase hover:bg-cyan-500/30 transition-all">{o.name}</button>
                         ))}
                       </div>
                     )}
@@ -1013,21 +695,12 @@ const App = () => {
            </div>
            <form onSubmit={handleChat} className="p-6 border-t">
               <div className="relative">
-                <input 
-                  type="text" 
-                  value={chatInput} 
-                  onChange={e=>setChatInput(e.target.value)} 
-                  placeholder="Search disease..." 
-                  className={`w-full p-6 pr-16 text-sm rounded-[2rem] border outline-none focus:border-cyan-500 transition-all ${theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200 text-slate-900'}`} 
-                />
-                <button type="submit" className="absolute right-3 top-3 p-4 rounded-full bg-cyan-600 text-white shadow-lg hover:bg-cyan-500 transition-all">
-                  <Send className="w-5 h-5" />
-                </button>
+                <input type="text" value={chatInput} onChange={e=>setChatInput(e.target.value)} placeholder="Search disease..." className={`w-full p-6 pr-16 text-sm rounded-[2rem] border outline-none focus:border-cyan-500 transition-all ${theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200 text-slate-900'}`} />
+                <button type="submit" className="absolute right-3 top-3 p-4 rounded-full bg-cyan-600 text-white shadow-lg hover:bg-cyan-500 transition-all"><Send className="w-5 h-5" /></button>
               </div>
            </form>
         </aside>
 
-        {/* Center Section - Hub */}
         <section className="flex-1 flex flex-col p-6 sm:p-10 overflow-hidden">
            <div className="flex items-center justify-between mb-8 overflow-x-auto pb-2">
               <div className={`flex p-2 rounded-[2rem] border shrink-0 ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
@@ -1037,33 +710,16 @@ const App = () => {
                    {id:'graph',i:Share2,l:'Interaction Graph'}, 
                    {id:'terrain',i:Globe2,l:'Gene Terrain'} 
                 ].map(t => (
-                  <button 
-                    key={t.id} 
-                    onClick={() => setViewMode(t.id as any)} 
-                    className={`px-6 sm:px-8 py-3 rounded-[1.5rem] text-[10px] sm:text-[11px] font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] flex items-center gap-3 transition-all ${viewMode === t.id ? 'bg-cyan-500 text-white shadow-lg' : 'text-slate-500 hover:text-cyan-400'}`}
-                  >
-                    <t.i className="w-4 h-4" /> {t.l}
-                  </button>
+                  <button key={t.id} onClick={() => setViewMode(t.id as any)} className={`px-6 sm:px-8 py-3 rounded-[1.5rem] text-[10px] sm:text-[11px] font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] flex items-center gap-3 transition-all ${viewMode === t.id ? 'bg-cyan-500 text-white shadow-lg' : 'text-slate-500 hover:text-cyan-400'}`}><t.i className="w-4 h-4" /> {t.l}</button>
                 ))}
               </div>
-              
               {!isLeftSidebarOpen && (
-                <button 
-                  onClick={() => setIsLeftSidebarOpen(true)}
-                  className={`p-3 rounded-full hidden sm:flex border ${theme === 'dark' ? 'bg-slate-900 border-slate-800 text-slate-500 hover:text-white' : 'bg-white border-slate-200 text-slate-400 hover:text-cyan-600'}`}
-                >
-                  <MessageSquare className="w-5 h-5" />
-                </button>
+                <button onClick={() => setIsLeftSidebarOpen(true)} className={`p-3 rounded-full hidden sm:flex border ${theme === 'dark' ? 'bg-slate-900 border-slate-800 text-slate-500 hover:text-white' : 'bg-white border-slate-200 text-slate-400 hover:text-cyan-600'}`}><MessageSquare className="w-5 h-5" /></button>
               )}
            </div>
 
            <div className={`flex-1 rounded-[3rem] sm:rounded-[4rem] border overflow-hidden relative shadow-2xl transition-all duration-300 ${theme === 'dark' ? 'bg-slate-900/40 border-slate-800' : 'bg-white border-slate-200'}`}>
-              {loading && (
-                <div className="absolute inset-0 bg-slate-950/30 backdrop-blur-xl z-50 flex flex-col items-center justify-center gap-8">
-                  <Loader2 className="w-16 h-16 animate-spin text-cyan-500" />
-                </div>
-              )}
-              
+              {loading && <div className="absolute inset-0 bg-slate-950/30 backdrop-blur-xl z-50 flex flex-col items-center justify-center gap-8"><Loader2 className="w-16 h-16 animate-spin text-cyan-500" /></div>}
               {researchState.targets.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center opacity-20 gap-8 text-center p-10">
                   <DatabaseZap className="w-32 h-32 sm:w-40 sm:h-40 text-cyan-500" />
@@ -1078,23 +734,21 @@ const App = () => {
                           <tr>
                             <th className="p-4 sm:p-6 pl-8 sm:pl-12">GENE</th>
                             <th className="p-4 sm:p-6 hidden lg:table-cell">Description</th>
-                            <th className="p-4 sm:p-6 text-center">Genetics</th>
-                            <th className="p-4 sm:p-6 text-center">RNA</th>
+                            <th className="p-4 sm:p-6 text-center">G (Genetics)</th>
+                            <th className="p-4 sm:p-6 text-center">E (Expression)</th>
+                            <th className="p-4 sm:p-6 text-center">T (Drug)</th>
                             <th className="p-4 sm:p-6 pr-8 sm:pr-12 text-right">Score</th>
                           </tr>
                         </thead>
                         <tbody className={`divide-y transition-colors ${theme === 'dark' ? 'divide-slate-800/20' : 'divide-slate-200'}`}>
                           {researchState.targets.map(t => (
-                            <tr 
-                              key={t.id} 
-                              onClick={()=>setResearchState(p=>({...p, focusSymbol: t.symbol}))} 
-                              className={`cursor-pointer transition-all hover:bg-cyan-500/10 ${researchState.focusSymbol === t.symbol ? (theme === 'dark' ? 'bg-cyan-500/15 border-l-4 border-cyan-500' : 'bg-cyan-50 border-l-4 border-cyan-500') : ''}`}
-                            >
+                            <tr key={t.id} onClick={()=>setResearchState(p=>({...p, focusSymbol: t.symbol}))} className={`cursor-pointer transition-all hover:bg-cyan-500/10 ${researchState.focusSymbol === t.symbol ? (theme === 'dark' ? 'bg-cyan-500/15 border-l-4 border-cyan-500' : 'bg-cyan-50 border-l-4 border-cyan-500') : ''}`}>
                               <td className="p-4 sm:p-6 pl-8 sm:pl-12 font-black text-cyan-500">{t.symbol}</td>
-                              <td className="p-4 sm:p-6 text-[10px] sm:text-[11px] uppercase truncate max-w-[150px] sm:max-w-[200px] hidden lg:table-cell">{t.name}</td>
-                              <td className="p-4 sm:p-6 text-center font-mono">{t.geneticScore.toFixed(2)}</td>
-                              <td className="p-4 sm:p-6 text-center font-mono">{t.expressionScore.toFixed(2)}</td>
-                              <td className="p-4 sm:p-6 pr-8 sm:pr-12 text-right font-mono font-black text-cyan-400">{(t.overallScore * 1).toFixed(4)}</td>
+                              <td className={`p-4 sm:p-6 text-[10px] sm:text-[11px] uppercase truncate max-w-[150px] sm:max-w-[200px] hidden lg:table-cell ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>{t.name}</td>
+                              <td className={`p-4 sm:p-6 text-center font-mono ${theme === 'dark' ? 'text-slate-200' : 'text-slate-900'}`}>{t.geneticScore.toFixed(2)}</td>
+                              <td className={`p-4 sm:p-6 text-center font-mono ${theme === 'dark' ? 'text-slate-200' : 'text-slate-900'}`}>{Math.max(t.expressionScore || 0, t.baselineExpression || 0).toFixed(2)}</td>
+                              <td className={`p-4 sm:p-6 text-center font-mono ${theme === 'dark' ? 'text-slate-200' : 'text-slate-900'}`}>{t.targetScore.toFixed(2)}</td>
+                              <td className={`p-4 sm:p-6 pr-8 sm:pr-12 text-right font-mono font-black ${theme === 'dark' ? 'text-cyan-400' : 'text-cyan-600'}`}>{(t.overallScore * 1).toFixed(4)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1108,7 +762,7 @@ const App = () => {
                         {researchState.enrichment.map((e, i) => (
                           <div key={i} className="space-y-3">
                             <div className="flex justify-between text-[10px] sm:text-[11px] uppercase font-black">
-                              <span className="truncate max-w-[70%]">{e.term}</span>
+                              <span className={`truncate max-w-[70%] ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>{e.term}</span>
                               <span className="text-cyan-500 font-mono">p: {e.pValue.toExponential(2)}</span>
                             </div>
                             <div className={`h-2 rounded-full overflow-hidden ${theme === 'dark' ? 'bg-slate-800' : 'bg-slate-100'}`}>
@@ -1126,9 +780,8 @@ const App = () => {
            </div>
         </section>
 
-        {/* Right Sidebar - Focused Target Info */}
         {researchState.focusSymbol && (
-          <aside className={`border-l p-8 sm:p-12 flex flex-col gap-10 overflow-y-auto scrollbar-thin shadow-2xl transition-all duration-300 ease-in-out whitespace-nowrap overflow-hidden ${isRightSidebarOpen ? 'w-[480px]' : 'w-0 opacity-0 pointer-events-none border-l-0'} ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+          <aside className={`border-l p-8 sm:p-12 flex flex-col gap-10 overflow-y-auto scrollbar-thin shadow-2xl transition-all duration-300 ease-in-out whitespace-normal overflow-hidden ${isRightSidebarOpen ? 'w-[480px]' : 'w-0 opacity-0 pointer-events-none border-l-0'} ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
              {(() => {
                const t = researchState.targets.find(x => x.symbol === researchState.focusSymbol);
                if (!t) return null;
@@ -1137,16 +790,16 @@ const App = () => {
                    <div className="space-y-4">
                      <div className={`flex items-center justify-between border-b pb-6 ${theme === 'dark' ? 'border-slate-800' : 'border-slate-100'}`}>
                        <h3 className="text-5xl sm:text-6xl font-black text-cyan-500 tracking-tighter">{t.symbol}</h3>
-                       <div className={`text-[9px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full ${theme === 'dark' ? 'text-slate-500 bg-slate-800' : 'text-slate-400 bg-slate-50'}`}>Candidate Profile</div>
+                       <div className={`text-[9px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full ${theme === 'dark' ? 'text-slate-500 bg-slate-800' : 'text-slate-400 bg-slate-50'}`}>GET SIGNAL ENABLED</div>
                      </div>
                      <p className="text-[13px] sm:text-[14px] font-bold text-slate-500 uppercase leading-relaxed text-wrap">{t.name}</p>
                    </div>
                    <div className="grid grid-cols-2 gap-4 sm:gap-6">
                      {[ 
-                       {l:'Genetics',v:t.geneticScore, c:'emerald'}, 
-                       {l:'RNA Signal',v:t.expressionScore, c:'blue'}, 
-                       {l:'Drug Fit',v:t.targetScore, c:'amber'}, 
-                       {l:'Overall',v:t.overallScore, c:'cyan'} 
+                       {l:'G (Genetics)',v:t.geneticScore, c:'emerald'}, 
+                       {l:'E* (Baseline)',v:t.combinedExpression || t.expressionScore || 0, c:'blue'}, 
+                       {l:'T (Drug Fit)',v:t.targetScore, c:'amber'}, 
+                       {l:'Overall Score',v:t.overallScore, c:'cyan'} 
                      ].map(s=>(
                        <div key={s.l} className={`p-4 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border shadow-inner ${theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
                          <div className="text-[9px] font-black text-slate-500 uppercase mb-2 sm:mb-3 tracking-widest">{s.l}</div>
@@ -1155,7 +808,7 @@ const App = () => {
                      ))}
                    </div>
                    <DrugLandscape targetId={t.id} theme={theme} />
-                   <LiteratureStats symbol={t.symbol} theme={theme} />
+                   <LiteratureStats symbol={t.symbol} diseaseName={researchState.activeDisease?.name || "Alzheimer's"} theme={theme} />
                    <div className="space-y-4">
                       <div className="flex items-center gap-4 text-slate-500">
                         <Network className="w-5 h-5 text-cyan-500" />
@@ -1167,7 +820,6 @@ const App = () => {
                             {p.label}
                           </span>
                         ))}
-                        {t.pathways.length > 10 && <span className="text-[10px] text-slate-500 font-bold self-center">+{t.pathways.length - 10} more</span>}
                       </div>
                    </div>
                  </>
@@ -1177,15 +829,14 @@ const App = () => {
         )}
       </main>
 
-      {/* Footer / Status Bar */}
       <footer className={`h-8 border-t flex items-center justify-between px-6 text-[10px] font-mono transition-colors ${theme === 'dark' ? 'bg-slate-950 border-slate-800 text-slate-500' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>
         <div className="flex gap-6 overflow-hidden">
-          <span className="flex items-center gap-1.5 shrink-0"><DatabaseZap className="w-3 h-3" /> NODE: OT_PRIMARY_STREAM</span>
-          <span className="flex items-center gap-1.5 shrink-0 hidden sm:flex"><Network className="w-3 h-3" /> AGENT: STABLE_V1_0</span>
+          <span className="flex items-center gap-1.5 shrink-0"><DatabaseZap className="w-3 h-3" /> NODE: OT_BASELINE_EXPR</span>
+          <span className="flex items-center gap-1.5 shrink-0 hidden sm:flex"><Network className="w-3 h-3" /> HYPOTHESIS: ALZ_GET_V1</span>
         </div>
         <div className="flex gap-6 items-center">
-          <span className="text-cyan-500 font-bold uppercase tracking-widest hidden lg:block">Researcher Access Level: Alpha</span>
-          <span className="bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded border border-emerald-500/20 uppercase font-black">Stream Active</span>
+          <span className="text-cyan-500 font-bold uppercase tracking-widest hidden lg:block">Hypothesis Generation Engine</span>
+          <span className="bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded border border-emerald-500/20 uppercase font-black">GET-Active</span>
         </div>
       </footer>
     </div>
@@ -1203,7 +854,7 @@ const SignInPage = ({ theme, toggleTheme, onSignIn }: { theme: Theme, toggleThem
             <Atom className="w-14 h-14 text-cyan-500 animate-pulse" />
           </div>
           <h1 className="text-4xl font-black tracking-tighter">Get<span className="text-cyan-500">Gene</span></h1>
-          <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.4em]">Advanced Target Discovery</p>
+          <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.4em]">Alzheimer's precision discovery</p>
         </div>
         <form onSubmit={e=>{e.preventDefault(); if(password===HARDCODED_PASSWORD) onSignIn("Researcher");}} className="space-y-6">
           <div className="space-y-4">
@@ -1235,7 +886,6 @@ const SignInPage = ({ theme, toggleTheme, onSignIn }: { theme: Theme, toggleThem
           <button onClick={toggleTheme} className="p-3 hover:bg-slate-500/10 rounded-full transition-all text-slate-500">
             {theme === 'dark' ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5" />}
           </button>
-          <div className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Protocol Version 1.0.42</div>
         </div>
       </div>
     </div>
