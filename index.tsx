@@ -192,7 +192,7 @@ const KnowledgeGraph = ({ targets, selectedId, onSelect, theme }: { targets: Tar
       <div className={`absolute bottom-6 right-6 p-4 rounded-2xl border backdrop-blur-md ${theme === 'dark' ? 'bg-slate-900/80 border-slate-800' : 'bg-white/80 border-slate-200'} space-y-2`}>
         <div className="flex items-center gap-3">
           <div className="w-3 h-3 rounded-full bg-[#c084fc]" />
-          <span className="text-[10px] font-black uppercase text-slate-500 tracking-widest">High Potential Targets (0.6)</span>
+          <span className="text-[10px] font-black uppercase text-slate-500 tracking-widest">High Potential Targets (>0.6)</span>
         </div>
         <div className="flex items-center gap-3">
           <div className="w-3 h-3 rounded-full bg-[#22d3ee]" />
@@ -607,10 +607,28 @@ const App = () => {
         { name: 'load_more_genes', parameters: { type: Type.OBJECT, properties: {} } },
         { name: 'update_view', parameters: { type: Type.OBJECT, properties: { mode: { type: Type.STRING, enum: ['list', 'enrichment', 'graph', 'terrain'] } }, required: ['mode'] } }
       ];
+      
+      const systemInstruction = `GetGene Clinical Agent. Specialized in Alzheimer's Target Discovery.
+      When asked to explain how this application works, provide a comprehensive explanation of the full pipeline:
+      
+      1. User Input: Queries are processed via natural language to identify clinical interests or specific disease focuses.
+      2. GET List Retrieval: Associated targets are fetched from the Open Targets Platform, specifically focusing on Genetics (G), RNA Expression (E), and Drug Tractability (T) signals.
+      3. Scoring: Metrics are normalized into G, E*, and T values. The Overall Score is a weighted integration of these multi-omics signals to prioritize targets.
+      4. PubMed Analysis: A dual-layer search strategy distinguishes between 'Direct Evidence' (high-confidence gene-disease titles/abstracts) and 'Broad PubMed Mentions' (recent keyword associations from 2024-2025).
+      5. Knowledge Graph: A forced-directed interaction map where link weights represent pathway overlap, highlighting synergistic target clusters.
+      6. Gene Terrain: A 3D WebGL topography mapping Genetics (X) against Tractability (Y), with height representing a weighted evidence composite (GET Signal).
+      7. UI Rendering: A high-performance, responsive interface utilizing Tailwind CSS, Lucide icons, and custom WebGL shaders for data topography.
+      8. Limitations: The system acts as a hypothesis-generation tool based on public database availability (Open Targets, PubMed, Enrichr) and should be validated by clinical experts.
+      
+      Do not show source code. Use headings, short paragraphs, and concrete examples of queries (e.g., 'Analyze targets for Alzheimer's'). Maintain a hypothesis-generating tone.`;
+
       const response = await ai.models.generateContent({
         model: 'gemini-3-pro-preview',
         contents: [...messages, userMsg].map(m => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.content }] })),
-        config: { tools: [{ functionDeclarations: tools as any }], systemInstruction: "GetGene Clinical Agent. Specialized in Alzheimer's Target Discovery. Use 'search_diseases' first. Use 'get_genes' once ID is known. Interpret GET (Genetics, Expression, Tractability) signals. Maintain hypothesis-generating tone." }
+        config: { 
+          tools: [{ functionDeclarations: tools as any }], 
+          systemInstruction 
+        }
       });
       if (response.functionCalls?.length) {
         for (const fc of response.functionCalls) {
@@ -830,14 +848,6 @@ const App = () => {
       </main>
 
       <footer className={`h-8 border-t flex items-center justify-between px-6 text-[10px] font-mono transition-colors ${theme === 'dark' ? 'bg-slate-950 border-slate-800 text-slate-500' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>
-        <div className="flex gap-6 overflow-hidden">
-          <span className="flex items-center gap-1.5 shrink-0"><DatabaseZap className="w-3 h-3" /> NODE: OT_BASELINE_EXPR</span>
-          <span className="flex items-center gap-1.5 shrink-0 hidden sm:flex"><Network className="w-3 h-3" /> HYPOTHESIS: ALZ_GET_V1</span>
-        </div>
-        <div className="flex gap-6 items-center">
-          <span className="text-cyan-500 font-bold uppercase tracking-widest hidden lg:block">Hypothesis Generation Engine</span>
-          <span className="bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded border border-emerald-500/20 uppercase font-black">GET-Active</span>
-        </div>
       </footer>
     </div>
   );
