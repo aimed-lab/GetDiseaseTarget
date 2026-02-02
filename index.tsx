@@ -192,7 +192,7 @@ const KnowledgeGraph = ({ targets, selectedId, onSelect, theme }: { targets: Tar
       <div className={`absolute bottom-6 right-6 p-4 rounded-2xl border backdrop-blur-md ${theme === 'dark' ? 'bg-slate-900/80 border-slate-800' : 'bg-white/80 border-slate-200'} space-y-2`}>
         <div className="flex items-center gap-3">
           <div className="w-3 h-3 rounded-full bg-[#c084fc]" />
-          <span className="text-[10px] font-black uppercase text-slate-500 tracking-widest">High Potential Targets (>0.6)</span>
+          <span className="text-[10px] font-black uppercase text-slate-500 tracking-widest">High Potential Targets (0.6)</span>
         </div>
         <div className="flex items-center gap-3">
           <div className="w-3 h-3 rounded-full bg-[#22d3ee]" />
