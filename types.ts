@@ -1,3 +1,4 @@
+
 export interface Pathway {
   id: string;
   label: string;
@@ -49,8 +50,34 @@ export interface PubMedStats {
   primarySearchLink: string;
 }
 
+export interface ClinicalSample {
+  sampleid: string;
+  sample_type: string;
+  _primary_disease: string;
+  age_at_initial_pathologic_diagnosis: string;
+  gender: string;
+  vital_status: string;
+  ajcc_pathologic_tumor_stage: string;
+  os_time: string;
+  os?: string; // Overall survival indicator (0=High/Alive, 1=Low/Dead)
+}
+
+export interface ExpressionRow {
+  sampleid: string;
+  gene_symbol: string;
+  value: string;
+}
+
+export interface SurvivalMetrics {
+  [symbol: string]: {
+    meanHigh: number;
+    meanLow: number;
+    delta: number;
+  };
+}
+
 export type Theme = 'dark' | 'light';
-export type ViewMode = 'list' | 'enrichment' | 'graph' | 'terrain';
+export type ViewMode = 'list' | 'enrichment' | 'graph' | 'terrain' | 'raw' | 'brca_high' | 'brca_low';
 export type TerrainLayer = 'gaussian' | 'discrete' | 'water' | 'sky';
 
 export interface ResearchContext {
@@ -60,6 +87,8 @@ export interface ResearchContext {
   limit: number;
   currentPage: number;
   focusSymbol: string | null;
+  survivalMetrics?: SurvivalMetrics;
+  isAnalyzingSurvival?: boolean;
 }
 
 export interface Message {

@@ -1,4 +1,5 @@
-import { Target, DrugInfo, DiseaseInfo, EnrichmentResult, PubMedStats } from './types';
+
+import { Target, DrugInfo, DiseaseInfo, EnrichmentResult, PubMedStats, ClinicalSample, ExpressionRow } from './types';
 
 const OPEN_TARGETS_API = 'https://api.platform.opentargets.org/api/v4/graphql';
 const ENRICHR_API = 'https://maayanlab.cloud/Enrichr';
@@ -143,5 +144,21 @@ export const api = {
     } catch (e) { 
       return { total: 0, recent: 0, topPapers: [], searchLink, primarySearchLink: searchLink }; 
     }
+  },
+
+  async getBrcaClinical(offset: number = 0): Promise<ClinicalSample[]> {
+    try {
+      const res = await fetch(`https://aimed.uab.edu/apex/gtkb/clinical_data/pancan/brca?offset=${offset}`);
+      const data = await res.json();
+      return data.items || [];
+    } catch (e) { return []; }
+  },
+
+  async getBrcaExpression(sampleId: string): Promise<ExpressionRow[]> {
+    try {
+      const res = await fetch(`https://aimed.uab.edu/apex/gtkb/gene_exp/pancan/brca/${sampleId}`);
+      const data = await res.json();
+      return data.items || [];
+    } catch (e) { return []; }
   }
 };

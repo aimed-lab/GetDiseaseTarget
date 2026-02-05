@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { GoogleGenAI, Type, Chat, GenerateContentResponse } from "@google/genai";
@@ -47,7 +48,13 @@ import {
   Share,
   RotateCcw,
   PanelLeft,
-  PanelRight
+  PanelRight,
+  Database,
+  ChevronLeft,
+  CheckCircle2,
+  TrendingUp,
+  TrendingDown,
+  Volume2
 } from 'lucide-react';
 
 import { 
@@ -61,7 +68,10 @@ import {
   ViewMode, 
   TerrainLayer, 
   ResearchContext, 
-  Message 
+  Message,
+  ClinicalSample,
+  ExpressionRow,
+  SurvivalMetrics
 } from './types';
 
 import { 
@@ -76,6 +86,7 @@ import { api } from './api';
 
 // --- Configuration ---
 const HARDCODED_PASSWORD = "Sparc@2026";
+const MAX_WebGL_POINTS = 1024;
 
 // --- Utils ---
 const getSigmaForZoom = (scale: number) => 60.0 / scale;
@@ -207,7 +218,19 @@ const KnowledgeGraph = ({ targets, selectedId, onSelect, theme }: { targets: Tar
   );
 };
 
-const GeneTerrain = ({ targets, onSelect, selectedId, theme }: { targets: Target[], onSelect: (t: Target | null) => void, selectedId: string | undefined, theme: Theme }) => {
+const GeneTerrain = ({ 
+  targets, 
+  onSelect, 
+  selectedId, 
+  theme, 
+  mode = 'default' 
+}: { 
+  targets: Target[], 
+  onSelect: (t: Target | null) => void, 
+  selectedId: string | undefined, 
+  theme: Theme,
+  mode?: 'default' | 'brca_high' | 'brca_low'
+}) => {
   const glCanvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const glRef = useRef<WebGLRenderingContext | null>(null);
@@ -215,6 +238,7 @@ const GeneTerrain = ({ targets, onSelect, selectedId, theme }: { targets: Target
   
   const [viewport, setViewport] = useState({ scale: 1.0, offset: { x: 0, y: 0 } });
   const [currentLayer, setCurrentLayer] = useState<TerrainLayer>('gaussian');
+  const [terrainGain, setTerrainGain] = useState(1.5);
   const [isolineSpacing, setIsolineSpacing] = useState(0.2);
   const [lineThickness, setLineThickness] = useState(0.02);
   const [isLassoActive, setIsLassoActive] = useState(false);
@@ -223,16 +247,47 @@ const GeneTerrain = ({ targets, onSelect, selectedId, theme }: { targets: Target
   const [lastMouse, setLastMouse] = useState<{x:number, y:number} | null>(null);
 
   const mappedTargets = useMemo(() => {
-    return targets.map((t, i) => {
-      const jitterX = Math.sin(i * 123.456) * 15;
-      const jitterY = Math.cos(i * 123.456) * 15;
+    // 1. Calculate raw layout and delta signatures
+    const raw = targets.map((t, i) => {
+      // Reduced jitter (Fix #5)
+      const jitterX = Math.sin(i * 123.456) * 5;
+      const jitterY = Math.cos(i * 123.456) * 5;
       const x = (t.geneticScore || 0) * 700 + 50 + jitterX;
-      const y = (t.targetScore || 0) * 500 + 50 + jitterY;
-      const e_star = t.combinedExpression || 0;
-      const val = (0.45 * (t.geneticScore || 0)) + (0.25 * e_star) + (0.30 * (t.targetScore || 0));
-      return { ...t, x, y, value: (val - 0.5) * 2.0 };
+      const y = (t.expressionScore || 0) * 500 + 50 + jitterY;
+
+      let delta = 0;
+      if (mode !== 'default') {
+        // Survival signal mode
+        delta = t.value || 0; // The signed difference meanHigh - meanLow
+      } else {
+        // Default mode: Overall score based intensity
+        const e_star = t.combinedExpression || 0;
+        delta = (0.45 * (t.geneticScore || 0)) + (0.25 * e_star) + (0.30 * (t.targetScore || 0)) - 0.5;
+      }
+
+      return { ...t, x, y, delta };
     });
-  }, [targets]);
+
+    // 2. Normalize Z-height magnitude across currently visible cohort (Fix #2)
+    const absVals = raw.map(t => Math.abs(t.delta)).filter(v => v > 0);
+    const maxAbs = absVals.length ? Math.max(...absVals) : 1.0;
+
+    return raw.map(t => {
+      let displayValue = 0;
+      if (mode === 'brca_high') {
+        // Only show positive deltas (Higher in high survival)
+        displayValue = t.delta > 0 ? (t.delta / maxAbs) : 0;
+      } else if (mode === 'brca_low') {
+        // Only show negative deltas (Higher in low survival)
+        displayValue = t.delta < 0 ? (Math.abs(t.delta) / maxAbs) : 0;
+      } else {
+        // Standard mode: Scale the centered overall score to 0..1
+        displayValue = (t.delta + 0.5); 
+      }
+
+      return { ...t, value: displayValue };
+    });
+  }, [targets, mode]);
 
   const initShader = (gl: WebGLRenderingContext, vs: string, fs: string) => {
     const vShader = gl.createShader(gl.VERTEX_SHADER)!;
@@ -263,31 +318,35 @@ const GeneTerrain = ({ targets, onSelect, selectedId, theme }: { targets: Target
     const prog = shadersRef.current[currentLayer];
     gl.useProgram(prog);
 
-    const pointsData = new Float32Array(1024 * 4);
-    const valuesData = new Float32Array(1024 * 4);
-    mappedTargets.forEach((t, i) => {
+    const pointsData = new Float32Array(MAX_WebGL_POINTS * 4);
+    const valuesData = new Float32Array(MAX_WebGL_POINTS * 4);
+    
+    // Clamp to 1024 points (Fix #1)
+    const count = Math.min(mappedTargets.length, MAX_WebGL_POINTS);
+    mappedTargets.slice(0, count).forEach((t, i) => {
       pointsData[i*4] = t.x!;
       pointsData[i*4+1] = t.y!;
-      valuesData[i*4] = t.value!;
+      // Apply Gain control (Fix #6)
+      valuesData[i*4] = t.value! * terrainGain;
     });
 
     const pointsTex = gl.createTexture();
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, pointsTex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1024, 1, 0, gl.RGBA, gl.FLOAT, pointsData);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, MAX_WebGL_POINTS, 1, 0, gl.RGBA, gl.FLOAT, pointsData);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 
     const valuesTex = gl.createTexture();
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, valuesTex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1024, 1, 0, gl.RGBA, gl.FLOAT, valuesData);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, MAX_WebGL_POINTS, 1, 0, gl.RGBA, gl.FLOAT, valuesData);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 
     gl.uniform1i(gl.getUniformLocation(prog, "pointsTexture"), 0);
     gl.uniform1i(gl.getUniformLocation(prog, "valuesTexture"), 1);
-    gl.uniform1i(gl.getUniformLocation(prog, "pointCount"), mappedTargets.length);
+    gl.uniform1i(gl.getUniformLocation(prog, "pointCount"), count);
     gl.uniform1f(gl.getUniformLocation(prog, "sigma"), getSigmaForZoom(viewport.scale));
     gl.uniform2f(gl.getUniformLocation(prog, "resolution"), 800, 600);
     gl.uniform2f(gl.getUniformLocation(prog, "offset"), viewport.offset.x, viewport.offset.y);
@@ -328,7 +387,18 @@ const GeneTerrain = ({ targets, onSelect, selectedId, theme }: { targets: Target
       mappedTargets.forEach(t => {
         const isSelected = t.id === selectedId;
         ctx.beginPath(); ctx.arc(t.x!, t.y!, (isSelected ? 8 : 4) / viewport.scale, 0, Math.PI * 2);
-        ctx.fillStyle = isSelected ? (theme === 'dark' ? '#fff' : '#000') : (theme === 'dark' ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.3)');
+        
+        let pointColor = theme === 'dark' ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.3)';
+        if (isSelected) {
+          pointColor = theme === 'dark' ? '#fff' : '#000';
+        } else if (mode === 'brca_high') {
+          // Color based on signed delta (Fix #3)
+          pointColor = t.delta > 0 ? 'rgba(34, 197, 94, 0.9)' : 'rgba(148, 163, 184, 0.2)'; 
+        } else if (mode === 'brca_low') {
+          pointColor = t.delta < 0 ? 'rgba(239, 68, 68, 0.9)' : 'rgba(148, 163, 184, 0.2)'; 
+        }
+
+        ctx.fillStyle = pointColor;
         ctx.fill();
         if (viewport.scale > 2) {
           ctx.font = `${10 / viewport.scale}px sans-serif`;
@@ -337,7 +407,7 @@ const GeneTerrain = ({ targets, onSelect, selectedId, theme }: { targets: Target
         }
       });
     }
-  }, [mappedTargets, viewport, currentLayer, isolineSpacing, lineThickness, lassoPoints, isLassoActive, selectedId, theme]);
+  }, [mappedTargets, viewport, currentLayer, terrainGain, isolineSpacing, lineThickness, lassoPoints, isLassoActive, selectedId, theme, mode]);
 
   useEffect(() => {
     const canvas = glCanvasRef.current;
@@ -406,7 +476,10 @@ const GeneTerrain = ({ targets, onSelect, selectedId, theme }: { targets: Target
         onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}
         onWheel={e => setViewport(prev => ({ ...prev, scale: Math.max(0.1, Math.min(10, prev.scale * (e.deltaY > 0 ? 0.9 : 1.1))) }))}
       />
+      
+      {/* UI Controls */}
       <div className="absolute top-8 left-8 flex flex-col gap-4">
+        {/* Layer Select */}
         <div className={`p-2 rounded-3xl border backdrop-blur-md flex flex-col gap-2 ${theme === 'dark' ? 'bg-slate-900/60 border-slate-700' : 'bg-white/60 border-slate-300'}`}>
           {[ 
             { id: 'gaussian', icon: Globe2, name: 'Gaussian Density' }, 
@@ -424,7 +497,34 @@ const GeneTerrain = ({ targets, onSelect, selectedId, theme }: { targets: Target
             </button>
           ))}
         </div>
+        
+        {/* Gain Control (Fix #6) */}
+        <div className={`p-4 rounded-[2rem] border backdrop-blur-md flex flex-col gap-3 ${theme === 'dark' ? 'bg-slate-900/60 border-slate-700' : 'bg-white/60 border-slate-300'}`}>
+           <div className="flex items-center gap-3">
+              <Volume2 className="w-4 h-4 text-cyan-500" />
+              <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">Signal Gain</span>
+           </div>
+           <input 
+              type="range" min="0.1" max="5.0" step="0.1" 
+              value={terrainGain} onChange={(e) => setTerrainGain(parseFloat(e.target.value))} 
+              className="w-32 h-1 bg-slate-800 rounded-full appearance-none cursor-pointer accent-cyan-500"
+           />
+        </div>
+
+        {/* Legend for Survival Mode */}
+        {mode !== 'default' && (
+          <div className={`p-4 rounded-[2rem] border backdrop-blur-md ${theme === 'dark' ? 'bg-slate-900/60 border-slate-700' : 'bg-white/60 border-slate-300'} space-y-2`}>
+            <div className="text-[9px] font-black uppercase text-slate-500 tracking-widest mb-2">BRCA Outcomes</div>
+            <div className="flex items-center gap-3">
+              <div className={`w-3 h-3 rounded-full ${mode === 'brca_high' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+              <span className="text-[10px] font-bold uppercase text-slate-400 tracking-tighter">
+                {mode === 'brca_high' ? 'High Survival' : 'Low Survival'}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
+
       <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-3 p-3 rounded-[2rem] border backdrop-blur-md bg-slate-900/40 border-slate-800 shadow-2xl">
         <button onClick={() => setViewport({ scale: 1.0, offset: { x: 0, y: 0 } })} className="p-3 rounded-full hover:bg-slate-500/20 text-slate-400" title="Fit to screen">
           <RotateCcw className="w-5 h-5" />
@@ -443,6 +543,145 @@ const GeneTerrain = ({ targets, onSelect, selectedId, theme }: { targets: Target
         <div className="flex bg-white rounded-full shadow-2xl overflow-hidden">
           <button onClick={() => setViewport(v => ({ ...v, scale: Math.min(10, v.scale * 1.2) }))} className="p-4 border-r hover:bg-slate-100 text-slate-900"><ZoomIn className="w-6 h-6" /></button>
           <button onClick={() => setViewport(v => ({ ...v, scale: Math.max(0.1, v.scale * 0.8) }))} className="p-4 hover:bg-slate-100 text-slate-900"><ZoomOut className="w-6 h-6" /></button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const RawDataView = ({ targets, theme }: { targets: Target[], theme: Theme }) => {
+  const [clinicalData, setClinicalData] = useState<ClinicalSample[]>([]);
+  const [selectedSample, setSelectedSample] = useState<ClinicalSample | null>(null);
+  const [expressionData, setExpressionData] = useState<ExpressionRow[]>([]);
+  const [loadingClinical, setLoadingClinical] = useState(false);
+  const [loadingExpression, setLoadingExpression] = useState(false);
+  const [showOnlyGetGenes, setShowOnlyGetGenes] = useState(true);
+  const [offset, setOffset] = useState(0);
+
+  const getTargetSymbols = useMemo(() => new Set(targets.map(t => t.symbol)), [targets]);
+
+  useEffect(() => {
+    const fetchClinical = async () => {
+      setLoadingClinical(true);
+      const data = await api.getBrcaClinical(offset);
+      setClinicalData(data);
+      setLoadingClinical(false);
+    };
+    fetchClinical();
+  }, [offset]);
+
+  const handleSelectSample = async (sample: ClinicalSample) => {
+    setSelectedSample(sample);
+    setLoadingExpression(true);
+    const data = await api.getBrcaExpression(sample.sampleid);
+    setExpressionData(data);
+    setLoadingExpression(false);
+  };
+
+  const filteredExpression = useMemo(() => {
+    if (!showOnlyGetGenes) return expressionData;
+    return expressionData.filter(row => getTargetSymbols.has(row.gene_symbol));
+  }, [expressionData, getTargetSymbols, showOnlyGetGenes]);
+
+  return (
+    <div className="h-full flex flex-col sm:flex-row divide-x divide-slate-800/10">
+      {/* Clinical Section */}
+      <div className="w-full sm:w-1/2 flex flex-col overflow-hidden">
+        <div className={`p-6 border-b flex items-center justify-between ${theme === 'dark' ? 'border-slate-800' : 'border-slate-100'}`}>
+          <div className="flex items-center gap-3">
+            <Stethoscope className="w-5 h-5 text-cyan-500" />
+            <span className="text-[11px] font-black uppercase tracking-widest text-slate-500">BRCA Clinical Cohort</span>
+          </div>
+          <div className="flex items-center gap-4">
+             <button onClick={() => setOffset(Math.max(0, offset - 10))} disabled={offset === 0} className="p-2 disabled:opacity-30"><ChevronLeft className="w-5 h-5" /></button>
+             <span className="text-[10px] font-mono font-bold text-cyan-500">OFFSET: {offset}</span>
+             <button onClick={() => setOffset(offset + 10)} className="p-2"><ChevronRight className="w-5 h-5" /></button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto scrollbar-thin">
+          {loadingClinical ? (
+            <div className="h-full flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-cyan-500" /></div>
+          ) : (
+            <table className="w-full text-left border-collapse">
+              <thead className={`sticky top-0 z-10 text-[9px] font-black uppercase border-b text-slate-500 ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+                <tr>
+                  <th className="p-4 pl-8">Sample ID</th>
+                  <th className="p-4">Type</th>
+                  <th className="p-4">Gender</th>
+                  <th className="p-4 text-right pr-8">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/10">
+                {clinicalData.map(sample => (
+                  <tr 
+                    key={sample.sampleid} 
+                    onClick={() => handleSelectSample(sample)}
+                    className={`cursor-pointer transition-all hover:bg-cyan-500/10 ${selectedSample?.sampleid === sample.sampleid ? (theme === 'dark' ? 'bg-cyan-500/15' : 'bg-cyan-50') : ''}`}
+                  >
+                    <td className="p-4 pl-8 font-mono text-[11px] text-cyan-500">{sample.sampleid}</td>
+                    <td className="p-4 text-[10px] uppercase font-bold text-slate-500">{sample.sample_type}</td>
+                    <td className="p-4 text-[10px] uppercase font-bold text-slate-500">{sample.gender}</td>
+                    <td className={`p-4 pr-8 text-right text-[10px] font-black uppercase ${sample.vital_status === 'Alive' ? 'text-emerald-500' : 'text-rose-500'}`}>{sample.vital_status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      {/* Expression Section */}
+      <div className="w-full sm:w-1/2 flex flex-col overflow-hidden">
+        <div className={`p-6 border-b flex items-center justify-between ${theme === 'dark' ? 'border-slate-800' : 'border-slate-100'}`}>
+          <div className="flex items-center gap-3">
+            <Activity className="w-5 h-5 text-cyan-500" />
+            <span className="text-[11px] font-black uppercase tracking-widest text-slate-500">Expression Profile</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <span className="text-[10px] font-black uppercase text-slate-500">Show GET Genes Only</span>
+            <button 
+              onClick={() => setShowOnlyGetGenes(!showOnlyGetGenes)}
+              className={`w-10 h-5 rounded-full p-1 transition-all ${showOnlyGetGenes ? 'bg-cyan-500' : 'bg-slate-700'}`}
+            >
+              <div className={`w-3 h-3 rounded-full bg-white transition-all ${showOnlyGetGenes ? 'translate-x-5' : 'translate-x-0'}`} />
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto scrollbar-thin">
+          {!selectedSample ? (
+            <div className="h-full flex flex-col items-center justify-center opacity-20 gap-4 text-center p-10">
+              <ArrowRight className="w-12 h-12 text-slate-500" />
+              <p className="text-[10px] font-black uppercase tracking-widest">Select clinical sample to load expression</p>
+            </div>
+          ) : loadingExpression ? (
+            <div className="h-full flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-cyan-500" /></div>
+          ) : (
+            <table className="w-full text-left border-collapse">
+              <thead className={`sticky top-0 z-10 text-[9px] font-black uppercase border-b text-slate-500 ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+                <tr>
+                  <th className="p-4 pl-8">Gene Symbol</th>
+                  <th className="p-4 text-center">In GET List</th>
+                  <th className="p-4 text-right pr-8">Expression Value</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/10">
+                {filteredExpression.map(row => {
+                  const isGetGene = getTargetSymbols.has(row.gene_symbol);
+                  return (
+                    <tr key={row.gene_symbol} className={`transition-all ${isGetGene ? (theme === 'dark' ? 'bg-cyan-500/5' : 'bg-cyan-50/50') : 'opacity-60'}`}>
+                      <td className={`p-4 pl-8 font-black text-[11px] ${isGetGene ? 'text-cyan-500' : 'text-slate-400'}`}>{row.gene_symbol}</td>
+                      <td className="p-4 text-center">
+                        {isGetGene && <CheckCircle2 className="w-4 h-4 text-emerald-500 mx-auto" />}
+                      </td>
+                      <td className="p-4 pr-8 text-right font-mono font-bold text-[11px] text-slate-500">
+                        {parseFloat(row.value).toFixed(4)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>
@@ -566,6 +805,72 @@ const App = () => {
 
   useEffect(() => { if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight; }, [messages]);
 
+  // BRCA Survival Analysis Logic
+  const analyzeBrcaSurvival = useCallback(async () => {
+    if (researchState.survivalMetrics || researchState.isAnalyzingSurvival) return;
+
+    setResearchState(prev => ({ ...prev, isAnalyzingSurvival: true }));
+    
+    try {
+      // 1. Fetch BRCA Clinical
+      const clinical = await api.getBrcaClinical(0); 
+      
+      const highSurvivalIds = clinical.filter(c => c.vital_status === 'Alive').map(c => c.sampleid).slice(0, 20);
+      const lowSurvivalIds = clinical.filter(c => c.vital_status === 'Dead').map(c => c.sampleid).slice(0, 20);
+      
+      const getSymbols = new Set(researchState.targets.map(t => t.symbol));
+      const highExpAgg: { [sym: string]: number[] } = {};
+      const lowExpAgg: { [sym: string]: number[] } = {};
+
+      const fetchExpBatch = async (ids: string[], agg: { [sym: string]: number[] }) => {
+        for (const id of ids) {
+          try {
+             const rows = await api.getBrcaExpression(id);
+             rows.forEach(r => {
+               if (getSymbols.has(r.gene_symbol)) {
+                 if (!agg[r.gene_symbol]) agg[r.gene_symbol] = [];
+                 agg[r.gene_symbol].push(parseFloat(r.value));
+               }
+             });
+          } catch(e) { /* ignore single sample failures */ }
+        }
+      };
+
+      await Promise.all([
+        fetchExpBatch(highSurvivalIds, highExpAgg),
+        fetchExpBatch(lowSurvivalIds, lowExpAgg)
+      ]);
+
+      const metrics: SurvivalMetrics = {};
+      researchState.targets.forEach(t => {
+        const highVals = highExpAgg[t.symbol] || [0];
+        const lowVals = lowExpAgg[t.symbol] || [0];
+        const meanHigh = highVals.reduce((a,b)=>a+b, 0) / Math.max(1, highVals.length);
+        const meanLow = lowVals.reduce((a,b)=>a+b, 0) / Math.max(1, lowVals.length);
+        metrics[t.symbol] = {
+          meanHigh,
+          meanLow,
+          delta: meanHigh - meanLow
+        };
+      });
+
+      setResearchState(prev => ({ 
+        ...prev, 
+        survivalMetrics: metrics, 
+        isAnalyzingSurvival: false 
+      }));
+    } catch (e) {
+      console.error("Survival Analysis Error:", e);
+      setResearchState(prev => ({ ...prev, isAnalyzingSurvival: false }));
+    }
+  }, [researchState.targets, researchState.survivalMetrics, researchState.isAnalyzingSurvival]);
+
+  useEffect(() => {
+    if ((viewMode === 'brca_high' || viewMode === 'brca_low') && !researchState.survivalMetrics) {
+      analyzeBrcaSurvival();
+    }
+  }, [viewMode, researchState.survivalMetrics, analyzeBrcaSurvival]);
+
   const handleToolExecution = useCallback(async (name: string, args: any) => {
     setLoading(true);
     try {
@@ -617,7 +922,7 @@ const App = () => {
         { name: 'search_diseases', parameters: { type: Type.OBJECT, properties: { query: { type: Type.STRING } }, required: ['query'] } },
         { name: 'get_genes', parameters: { type: Type.OBJECT, properties: { id: { type: Type.STRING }, name: { type: Type.STRING } }, required: ['id', 'name'] } },
         { name: 'load_more_genes', parameters: { type: Type.OBJECT, properties: {} } },
-        { name: 'update_view', parameters: { type: Type.OBJECT, properties: { mode: { type: Type.STRING, enum: ['list', 'enrichment', 'graph', 'terrain'] } }, required: ['mode'] } }
+        { name: 'update_view', parameters: { type: Type.OBJECT, properties: { mode: { type: Type.STRING, enum: ['list', 'enrichment', 'graph', 'terrain', 'raw', 'brca_high', 'brca_low'] } }, required: ['mode'] } }
       ];
       
       const systemInstruction = `GetGene Clinical Agent. Specialized in Alzheimer's Target Discovery.
@@ -629,8 +934,9 @@ const App = () => {
       4. PubMed Analysis: A dual-layer search strategy distinguishes between 'Direct Evidence' (high-confidence gene-disease titles/abstracts) and 'Broad PubMed Mentions' (recent keyword associations from 2024-2025).
       5. Knowledge Graph: A forced-directed interaction map where link weights represent pathway overlap, highlighting synergistic target clusters.
       6. Gene Terrain: A 3D WebGL topography mapping Genetics (X) against Tractability (Y), with height representing a weighted evidence composite (GET Signal).
-      7. UI Rendering: A high-performance, responsive interface utilizing Tailwind CSS, Lucide icons, and custom WebGL shaders for data topography.
-      8. Limitations: The system acts as a hypothesis-generation tool based on public database availability (Open Targets, PubMed, Enrichr) and should be validated by clinical experts.
+      7. Raw Data: Direct clinical and expression context from TCGA BRCA cohorts, linked back to the prioritized GET targets.
+      8. UI Rendering: A high-performance, responsive interface utilizing Tailwind CSS, Lucide icons, and custom WebGL shaders for data topography.
+      9. Limitations: The system acts as a hypothesis-generation tool based on public database availability (Open Targets, PubMed, Enrichr) and should be validated by clinical experts.
       
       Do not show source code. Use headings, short paragraphs, and concrete examples of queries (e.g., 'Analyze targets for Alzheimer's'). Maintain a hypothesis-generating tone.`;
 
@@ -737,10 +1043,13 @@ const App = () => {
                 {[ 
                    {id:'list',i:List,l:'List'}, 
                    {id:'enrichment',i:BarChart3,l:'Enrich'}, 
-                   {id:'graph',i:Share2,l:'Interaction Graph'}, 
-                   {id:'terrain',i:Globe2,l:'Gene Terrain'} 
+                   {id:'graph',i:Share2,l:'Graph'}, 
+                   {id:'terrain',i:Globe2,l:'Terrain'},
+                   {id:'brca_high',i:TrendingUp,l:'High Survival'},
+                   {id:'brca_low',i:TrendingDown,l:'Low Survival'},
+                   {id:'raw',i:Database,l:'Raw Data'}
                 ].map(t => (
-                  <button key={t.id} onClick={() => setViewMode(t.id as any)} className={`px-6 sm:px-8 py-3 rounded-[1.5rem] text-[10px] sm:text-[11px] font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] flex items-center gap-3 transition-all ${viewMode === t.id ? 'bg-cyan-500 text-white shadow-lg' : 'text-slate-500 hover:text-cyan-400'}`}><t.i className="w-4 h-4" /> {t.l}</button>
+                  <button key={t.id} onClick={() => setViewMode(t.id as any)} className={`px-4 sm:px-6 py-3 rounded-[1.5rem] text-[9px] sm:text-[10px] font-black uppercase tracking-[0.15em] sm:tracking-[0.2em] flex items-center gap-2 transition-all ${viewMode === t.id ? 'bg-cyan-500 text-white shadow-lg' : 'text-slate-500 hover:text-cyan-400'}`}><t.i className="w-3.5 h-3.5" /> {t.l}</button>
                 ))}
               </div>
               {!isLeftSidebarOpen && (
@@ -749,8 +1058,23 @@ const App = () => {
            </div>
 
            <div className={`flex-1 rounded-[3rem] sm:rounded-[4rem] border overflow-hidden relative shadow-2xl transition-all duration-300 ${theme === 'dark' ? 'bg-slate-900/40 border-slate-800' : 'bg-white border-slate-200'}`}>
-              {loading && <div className="absolute inset-0 bg-slate-950/30 backdrop-blur-xl z-50 flex flex-col items-center justify-center gap-8"><Loader2 className="w-16 h-16 animate-spin text-cyan-500" /></div>}
-              {researchState.targets.length === 0 ? (
+              {(loading || researchState.isAnalyzingSurvival) && (
+                <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-2xl z-50 flex flex-col items-center justify-center gap-8">
+                  <Loader2 className="w-16 h-16 animate-spin text-cyan-500" />
+                  <div className="text-center space-y-3">
+                    <p className="text-[12px] font-black uppercase tracking-[0.4em] text-cyan-500">
+                      {researchState.isAnalyzingSurvival ? "Aggregating BRCA Survival Signatures..." : "Synchronizing Discovery Data..."}
+                    </p>
+                    {researchState.isAnalyzingSurvival && (
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest max-w-xs mx-auto">
+                        Fetching patient expression batch and cross-referencing with GET targets.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {researchState.targets.length === 0 && viewMode !== 'raw' ? (
                 <div className="h-full flex flex-col items-center justify-center opacity-20 gap-8 text-center p-10">
                   <DatabaseZap className="w-32 h-32 sm:w-40 sm:h-40 text-cyan-500" />
                   <p className="text-sm font-black uppercase tracking-[0.4em] sm:tracking-[0.6em]">Awaiting Discovery Protocol</p>
@@ -798,7 +1122,6 @@ const App = () => {
                       </div>
                       <div className="grid grid-cols-1 gap-8">
                         {researchState.enrichment.map((e, i) => {
-                          // nCoCo simulation
                           const nCoCo = Math.min(0.98, (Math.log10(e.combinedScore + 1) / 3) + (Math.random() * 0.1));
                           const nCoCoPercent = nCoCo * 100;
                           
@@ -825,13 +1148,11 @@ const App = () => {
                                 </div>
                                 
                                 <div className="flex items-center gap-12 shrink-0">
-                                  {/* Stats */}
                                   <div className="space-y-1 text-right min-w-[80px]">
                                     <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest">p-Value</div>
                                     <div className="text-[12px] font-mono font-bold text-cyan-500">{e.pValue.toExponential(2)}</div>
                                   </div>
 
-                                  {/* nCoCo Gauge */}
                                   <div className="space-y-3 w-56">
                                     <div className="flex justify-between items-end">
                                       <div className="space-y-0.5">
@@ -859,16 +1180,34 @@ const App = () => {
                   )}
                   {viewMode === 'graph' && <KnowledgeGraph targets={researchState.targets} selectedId={researchState.focusSymbol || undefined} onSelect={(t)=>setResearchState(p=>({...p, focusSymbol: t?.symbol || null}))} theme={theme} />}
                   {viewMode === 'terrain' && <GeneTerrain targets={researchState.targets} selectedId={researchState.targets.find(t=>t.symbol===researchState.focusSymbol)?.id} onSelect={(t)=>setResearchState(p=>({...p, focusSymbol: t?.symbol || null}))} theme={theme} />}
+                  
+                  {(viewMode === 'brca_high' || viewMode === 'brca_low') && researchState.survivalMetrics && (
+                    <GeneTerrain 
+                      targets={researchState.targets.map(t => ({ 
+                        ...t, 
+                        // Injected raw signed delta
+                        value: researchState.survivalMetrics?.[t.symbol]?.delta || 0 
+                      }))} 
+                      selectedId={researchState.targets.find(t=>t.symbol===researchState.focusSymbol)?.id} 
+                      onSelect={(t)=>setResearchState(p=>({...p, focusSymbol: t?.symbol || null}))} 
+                      theme={theme} 
+                      mode={viewMode as 'brca_high' | 'brca_low'}
+                    />
+                  )}
+
+                  {viewMode === 'raw' && <RawDataView targets={researchState.targets} theme={theme} />}
                 </>
               )}
            </div>
         </section>
 
-        {researchState.focusSymbol && (
+        {researchState.focusSymbol && viewMode !== 'raw' && (
           <aside className={`border-l p-8 sm:p-12 flex flex-col gap-10 overflow-y-auto scrollbar-thin shadow-2xl transition-all duration-300 ease-in-out whitespace-normal overflow-hidden ${isRightSidebarOpen ? 'w-[480px]' : 'w-0 opacity-0 pointer-events-none border-l-0'} ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
              {(() => {
                const t = researchState.targets.find(x => x.symbol === researchState.focusSymbol);
                if (!t) return null;
+               const sm = researchState.survivalMetrics?.[t.symbol];
+
                return (
                  <>
                    <div className="space-y-4">
@@ -878,6 +1217,29 @@ const App = () => {
                      </div>
                      <p className="text-[13px] sm:text-[14px] font-bold text-slate-500 uppercase leading-relaxed text-wrap">{t.name}</p>
                    </div>
+
+                   {sm && (
+                     <div className={`p-6 rounded-[2rem] border ${theme === 'dark' ? 'bg-slate-950/40 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                        <div className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-6">Patient-Level Analysis (BRCA)</div>
+                        <div className="grid grid-cols-2 gap-8">
+                           <div className="space-y-1">
+                              <div className="text-[8px] font-black text-emerald-500 uppercase">High Survival Exp.</div>
+                              <div className="text-xl font-mono font-bold">{sm.meanHigh.toFixed(4)}</div>
+                           </div>
+                           <div className="space-y-1">
+                              <div className="text-[8px] font-black text-rose-500 uppercase">Low Survival Exp.</div>
+                              <div className="text-xl font-mono font-bold">{sm.meanLow.toFixed(4)}</div>
+                           </div>
+                        </div>
+                        <div className="mt-6 pt-6 border-t border-slate-800/20 flex items-center justify-between">
+                           <span className="text-[9px] font-black uppercase text-slate-400">Survival Delta</span>
+                           <span className={`text-sm font-black font-mono ${sm.delta > 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                              {sm.delta > 0 ? '+' : ''}{sm.delta.toFixed(4)}
+                           </span>
+                        </div>
+                     </div>
+                   )}
+
                    <div className="grid grid-cols-2 gap-4 sm:gap-6">
                      {[ 
                        {l:'G (Genetics)',v:t.geneticScore, c:'emerald'}, 
