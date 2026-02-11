@@ -1,5 +1,3 @@
-
-
 export interface Pathway {
   id: string;
   label: string;
@@ -78,7 +76,7 @@ export interface SurvivalMetrics {
 }
 
 export type Theme = 'dark' | 'light';
-export type ViewMode = 'list' | 'correlation' | 'enrichment' | 'graph' | 'terrain' | 'raw' | 'brca_high' | 'brca_low';
+export type ViewMode = 'list' | 'correlation' | 'enrichment' | 'graph' | 'terrain' | 'raw' | 'survival';
 export type TerrainLayer = 'gaussian' | 'discrete' | 'water' | 'sky';
 
 export interface ResearchContext {

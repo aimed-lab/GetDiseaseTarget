@@ -17,6 +17,7 @@ export const terrainFragmentShader = `
   uniform vec2 resolution;
   uniform vec2 offset;
   uniform float scale;
+  uniform int isSurvival;
 
   float gaussian2D(vec2 point, vec2 center) {
     vec2 d = (point - center);
@@ -45,7 +46,17 @@ export const terrainFragmentShader = `
       value += val * gaussian2D(worldPos, pt);
     }
     
-    vec3 col = spectral(value);
+    vec3 col;
+    if (isSurvival == 1) {
+      if (value > 0.0) {
+        col = vec3(0.93, 0.26, 0.26); // Red for upregulated/amplification
+      } else {
+        col = vec3(0.14, 0.38, 0.92); // Blue for downregulated/inhibition
+      }
+    } else {
+      col = spectral(value);
+    }
+    
     float intensity = clamp(abs(value) * 3.0, 0.0, 1.0);
     gl_FragColor = vec4(col, 0.7 * intensity + 0.1);
   }

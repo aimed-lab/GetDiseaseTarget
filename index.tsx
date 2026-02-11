@@ -223,7 +223,7 @@ const CorrelationView = ({ targets, theme }: { targets: Target[], theme: Theme }
               <td className="p-4 pl-8 font-bold text-blue-600 dark:text-blue-500 text-[13px]">{p.a.symbol}</td>
               <td className="p-4 font-bold text-blue-600 dark:text-blue-500 text-[13px]">{p.b.symbol}</td>
               <td className="p-4 text-center">
-                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${p.r >= 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'}`}>
+                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${p.r >= 0 ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}>
                   {p.r >= 0 ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
                   {p.r >= 0 ? 'Positive' : 'Negative'}
                 </span>
@@ -274,7 +274,8 @@ const KnowledgeGraph = ({ targets, selectedId, onSelect, theme }: { targets: Tar
         ctx.beginPath(); 
         ctx.moveTo(s.x * baseScale, s.y * baseScale); 
         ctx.lineTo(t.x * baseScale, t.y * baseScale);
-        const rgb = l.sign >= 0 ? '37, 99, 235' : '239, 68, 68';
+        // Red = positive, Blue = negative
+        const rgb = l.sign >= 0 ? '239, 68, 68' : '37, 99, 235';
         ctx.strokeStyle = `rgba(${rgb}, ${0.05 + l.weight * 0.15})`;
         ctx.lineWidth = (0.5 + l.weight * 2.5) / transform.k;
         ctx.stroke();
@@ -368,16 +369,47 @@ const KnowledgeGraph = ({ targets, selectedId, onSelect, theme }: { targets: Tar
       </div>
       <div className={`absolute bottom-6 left-6 p-4 rounded-lg border shadow-sm ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200'} space-y-2`}>
         <div className="flex items-center gap-2">
-          <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />
+          <div className="w-2.5 h-2.5 rounded-full bg-rose-500" />
           <span className={`text-[11px] font-bold ${theme === 'dark' ? 'text-neutral-500' : 'text-neutral-600'}`}>Positive Correlation</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-2.5 h-2.5 rounded-full bg-rose-500" />
+          <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />
           <span className={`text-[11px] font-bold ${theme === 'dark' ? 'text-neutral-500' : 'text-neutral-600'}`}>Negative Correlation</span>
         </div>
       </div>
     </div>
   );
+};
+
+/**
+ * Calculates a point color corresponding to its position in the terrain.
+ * For survival mode, matches the amplification Red/Blue logic.
+ */
+const getSpectralColorJS = (value: number, isSurvival: boolean) => {
+  if (isSurvival) {
+    if (value > 0) return 'rgba(239, 68, 68, 0.95)'; // Matching Red hill
+    if (value < 0) return 'rgba(37, 99, 235, 0.95)'; // Matching Blue hill
+    return 'rgba(115, 115, 115, 0.4)';
+  }
+
+  const t = Math.max(0, Math.min(1, (value + 1) / 2));
+  let r, g, b;
+  if (t <= 0.2) {
+    r = 0; g = 0.1 + (0.4 - 0.1) * (t / 0.2); b = 0.3 + (0.8 - 0.3) * (t / 0.2);
+  } else if (t <= 0.4) {
+    const p = (t - 0.2) / 0.2;
+    r = 0.1 * p; g = 0.4 + 0.4 * p; b = 0.8 + 0.1 * p;
+  } else if (t <= 0.6) {
+    const p = (t - 0.4) / 0.2;
+    r = 0.1 + 0.1 * p; g = 0.8 + 0.1 * p; b = 0.9 - 0.5 * p;
+  } else if (t <= 0.8) {
+    const p = (t - 0.6) / 0.2;
+    r = 0.2 + 0.8 * p; g = 0.9; b = 0.4 - 0.2 * p;
+  } else {
+    const p = (t - 0.8) / 0.2;
+    r = 1.0; g = 0.9 - 0.7 * p; b = 0.2 - 0.2 * p;
+  }
+  return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
 };
 
 const GeneTerrain = ({ 
@@ -391,7 +423,7 @@ const GeneTerrain = ({
   onSelect: (t: Target | null) => void, 
   selectedId: string | undefined, 
   theme: Theme,
-  mode?: 'default' | 'brca_high' | 'brca_low'
+  mode?: 'default' | 'survival'
 }) => {
   const glCanvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -432,10 +464,8 @@ const GeneTerrain = ({
 
     return raw.map(t => {
       let displayValue = 0;
-      if (mode === 'brca_high') {
-        displayValue = t.delta > 0 ? (t.delta / maxAbs) : 0;
-      } else if (mode === 'brca_low') {
-        displayValue = t.delta < 0 ? (Math.abs(t.delta) / maxAbs) : 0;
+      if (mode === 'survival') {
+        displayValue = maxAbs > 0 ? t.delta / maxAbs : 0;
       } else {
         displayValue = (t.delta + 0.5); 
       }
@@ -447,22 +477,13 @@ const GeneTerrain = ({
     const vShader = gl.createShader(gl.VERTEX_SHADER)!;
     gl.shaderSource(vShader, vs);
     gl.compileShader(vShader);
-    if (!gl.getShaderParameter(vShader, gl.COMPILE_STATUS)) {
-      console.error("Vertex shader failed to compile:", gl.getShaderInfoLog(vShader));
-    }
     const fShader = gl.createShader(gl.FRAGMENT_SHADER)!;
     gl.shaderSource(fShader, fs);
     gl.compileShader(fShader);
-    if (!gl.getShaderParameter(fShader, gl.COMPILE_STATUS)) {
-      console.error("Fragment shader failed to compile:", gl.getShaderInfoLog(fShader));
-    }
     const prog = gl.createProgram()!;
     gl.attachShader(prog, vShader);
     gl.attachShader(prog, fShader);
     gl.linkProgram(prog);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-      console.error("Shader program failed to link:", gl.getProgramInfoLog(prog));
-    }
     return prog;
   };
 
@@ -481,10 +502,7 @@ const GeneTerrain = ({
     const prog = shadersRef.current[currentLayer];
     gl.useProgram(prog);
 
-    // Reuse or create point texture
-    if (!pointsTexRef.current) {
-      pointsTexRef.current = gl.createTexture();
-    }
+    if (!pointsTexRef.current) pointsTexRef.current = gl.createTexture();
     const pointsData = new Float32Array(MAX_WebGL_POINTS * 4);
     const valuesData = new Float32Array(MAX_WebGL_POINTS * 4);
     
@@ -501,10 +519,7 @@ const GeneTerrain = ({
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 
-    // Reuse or create value texture
-    if (!valuesTexRef.current) {
-      valuesTexRef.current = gl.createTexture();
-    }
+    if (!valuesTexRef.current) valuesTexRef.current = gl.createTexture();
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, valuesTexRef.current);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, MAX_WebGL_POINTS, 1, 0, gl.RGBA, gl.FLOAT, valuesData);
@@ -518,13 +533,13 @@ const GeneTerrain = ({
     gl.uniform2f(gl.getUniformLocation(prog, "resolution"), 800, 600);
     gl.uniform2f(gl.getUniformLocation(prog, "offset"), viewport.offset.x, viewport.offset.y);
     gl.uniform1f(gl.getUniformLocation(prog, "scale"), viewport.scale);
+    gl.uniform1i(gl.getUniformLocation(prog, "isSurvival"), mode === 'survival' ? 1 : 0);
     
     if (currentLayer === 'discrete') {
       gl.uniform1f(gl.getUniformLocation(prog, "lineThickness"), 0.015);
       gl.uniform1f(gl.getUniformLocation(prog, "isolineSpacing"), 0.25);
     }
 
-    // Reuse or create geometry buffer
     if (!bufferRef.current) {
       bufferRef.current = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, bufferRef.current);
@@ -552,16 +567,12 @@ const GeneTerrain = ({
         const isSelected = t.id === selectedId;
         ctx.beginPath(); ctx.arc(t.x!, t.y!, (isSelected ? 5 : 2.5) / viewport.scale, 0, Math.PI * 2);
         
-        // High visibility point colors for light mode
         let pointColor = theme === 'dark' ? 'rgba(115, 115, 115, 0.4)' : 'rgba(38, 38, 38, 0.8)';
         if (isSelected) {
           pointColor = '#2563eb';
-        } else if (mode === 'brca_high') {
-          // High survival / Up-regulated genes: Red
-          pointColor = t.delta > 0 ? 'rgba(239, 68, 68, 0.95)' : (theme === 'dark' ? 'rgba(115, 115, 115, 0.1)' : 'rgba(0, 0, 0, 0.45)'); 
-        } else if (mode === 'brca_low') {
-          // Low survival / Down-regulated genes: Blue
-          pointColor = t.delta < 0 ? 'rgba(37, 99, 235, 0.95)' : (theme === 'dark' ? 'rgba(115, 115, 115, 0.1)' : 'rgba(0, 0, 0, 0.45)'); 
+        } else {
+          // Point color matches terrain hill color logic (Red/Blue amplification)
+          pointColor = getSpectralColorJS(t.value!, mode === 'survival');
         }
 
         ctx.fillStyle = pointColor;
@@ -573,39 +584,6 @@ const GeneTerrain = ({
         }
       });
       ctx.restore();
-
-      // DRAW NORMALIZED AXES (Screen space)
-      ctx.resetTransform();
-      const cW = 800; const cH = 600;
-      const mL = 60; const mB = 40; const mR = 20; const mT = 20;
-      
-      ctx.beginPath();
-      ctx.moveTo(mL, cH - mB); ctx.lineTo(cW - mR, cH - mB); // X
-      ctx.moveTo(mL, mT); ctx.lineTo(mL, cH - mB); // Y
-      ctx.strokeStyle = theme === 'dark' ? '#404040' : '#888888';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-
-      [0, 0.2, 0.4, 0.6, 0.8, 1.0].forEach(v => {
-        const xPos = mL + v * (cW - mL - mR);
-        const yPos = (cH - mB) - v * (cH - mB - mT);
-        ctx.fillStyle = theme === 'dark' ? '#737373' : '#374151';
-        ctx.font = 'bold 9px Inter';
-        ctx.textAlign = 'center';
-        ctx.fillText(v.toFixed(1), xPos, cH - mB + 15);
-        ctx.textAlign = 'right';
-        ctx.fillText(v.toFixed(1), mL - 8, yPos + 3);
-      });
-
-      ctx.font = 'bold 10px Inter';
-      ctx.fillStyle = theme === 'dark' ? '#a3a3a3' : '#111827';
-      ctx.textAlign = 'center';
-      ctx.fillText('Correlation Space (X)', mL + (cW - mL - mR) / 2, cH - 8);
-      ctx.save();
-      ctx.translate(15, mT + (cH - mT - mB) / 2);
-      ctx.rotate(-Math.PI / 2);
-      ctx.fillText('Correlation Space (Y)', 0, 0);
-      ctx.restore();
     }
   }, [mappedTargets, viewport, currentLayer, terrainGain, selectedId, theme, mode]);
 
@@ -616,7 +594,6 @@ const GeneTerrain = ({
       glRef.current?.getExtension('OES_texture_float');
     }
     return () => {
-      // Cleanup WebGL resources on unmount
       const gl = glRef.current;
       if (gl) {
         if (pointsTexRef.current) gl.deleteTexture(pointsTexRef.current);
@@ -627,13 +604,9 @@ const GeneTerrain = ({
     };
   }, []);
 
-  // Use continuous render loop for smooth interactions and fixed state sync
   useEffect(() => {
     let frameId: number;
-    const loop = () => {
-      draw();
-      frameId = requestAnimationFrame(loop);
-    };
+    const loop = () => { draw(); frameId = requestAnimationFrame(loop); };
     frameId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(frameId);
   }, [draw]);
@@ -1003,7 +976,7 @@ const App = () => {
   }, [researchState.targets, researchState.survivalMetrics, researchState.isAnalyzingSurvival]);
 
   useEffect(() => {
-    if (isBrcaActive && (viewMode === 'brca_high' || viewMode === 'brca_low') && !researchState.survivalMetrics) {
+    if (isBrcaActive && viewMode === 'survival' && !researchState.survivalMetrics) {
       analyzeBrcaSurvival();
     }
   }, [viewMode, researchState.survivalMetrics, analyzeBrcaSurvival, isBrcaActive]);
@@ -1053,7 +1026,7 @@ const App = () => {
       const tools = [
         { name: 'search_diseases', parameters: { type: Type.OBJECT, properties: { query: { type: Type.STRING } }, required: ['query'] } },
         { name: 'get_genes', parameters: { type: Type.OBJECT, properties: { id: { type: Type.STRING }, name: { type: Type.STRING } }, required: ['id', 'name'] } },
-        { name: 'update_view', parameters: { type: Type.OBJECT, properties: { mode: { type: Type.STRING, enum: ['list', 'correlation', 'enrichment', 'graph', 'terrain', 'raw', 'brca_high', 'brca_low'] } }, required: ['mode'] } }
+        { name: 'update_view', parameters: { type: Type.OBJECT, properties: { mode: { type: Type.STRING, enum: ['list', 'correlation', 'enrichment', 'graph', 'terrain', 'raw', 'survival'] } }, required: ['mode'] } }
       ];
       const response = await ai.models.generateContent({
         model: 'gemini-3-pro-preview',
@@ -1142,13 +1115,12 @@ const App = () => {
            <div className="flex items-center mb-5 shrink-0">
               <div className={`flex p-1 rounded-lg border shrink-0 overflow-x-auto max-w-full scrollbar-hide ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}>
                 {[ 
-                   {id:'list',i:List,l:'Targets'}, 
+                   {id:'list',i:List,l:'GET LIST'}, 
                    {id:'correlation',i:Network,l:'Correlation'},
                    {id:'enrichment',i:BarChart3,l:'Enrichment'}, 
                    {id:'graph',i:Share2,l:'Graph'}, 
                    {id:'terrain',i:Globe2,l:'Terrain'},
-                   {id:'brca_high',i:TrendingUp,l:'Up-regulated'},
-                   {id:'brca_low',i:TrendingDown,l:'Down-regulated'},
+                   {id:'survival',i:Activity,l:'Survival Focused'},
                    {id:'raw',i:Database,l:'Cohort Data'}
                 ].map(t => (
                   <button key={t.id} onClick={() => setViewMode(t.id as any)} className={`px-4 py-2 rounded text-[11px] font-semibold uppercase tracking-wider flex items-center gap-2 transition-all whitespace-nowrap ${viewMode === t.id ? 'bg-blue-600 text-white' : 'text-neutral-500 hover:text-blue-600'}`}><t.i className="w-3.5 h-3.5" /> {t.l}</button>
@@ -1170,7 +1142,7 @@ const App = () => {
                   <h2 className="text-lg font-bold mb-1">Awaiting Research Focus</h2>
                   <p className="text-sm max-w-sm text-neutral-500">Provide a clinical condition to synthesize cross-omics data and identify high-priority therapeutic targets.</p>
                 </div>
-              ) : (viewMode === 'raw' || viewMode === 'brca_high' || viewMode === 'brca_low') && !isBrcaActive ? (
+              ) : (viewMode === 'raw' || viewMode === 'survival') && !isBrcaActive ? (
                 <div className="h-full flex flex-col items-center justify-center p-12 text-center">
                   <div className="p-4 rounded-full bg-blue-50 dark:bg-blue-900/10 mb-6">
                     <AlertCircle className="w-10 h-10 text-blue-600" />
@@ -1188,11 +1160,11 @@ const App = () => {
                       <table className="w-full text-left">
                         <thead className={`sticky top-0 z-10 text-[10px] font-bold uppercase tracking-widest border-b ${theme === 'dark' ? 'bg-[#171717] border-neutral-800 text-neutral-500' : 'bg-neutral-50 border-neutral-200 text-neutral-600'}`}>
                           <tr>
-                            <th className="p-4 pl-8">Symbol</th>
-                            <th className="p-4 hidden md:table-cell">Target Summary</th>
+                            <th className="p-4 pl-8">Gene</th>
+                            <th className="p-4 hidden md:table-cell">Gene Name</th>
                             <th className="p-4 text-center">Genetic</th>
-                            <th className="p-4 text-center">RNA</th>
-                            <th className="p-4 text-center">Tractability</th>
+                            <th className="p-4 text-center">Expression</th>
+                            <th className="p-4 text-center">Target</th>
                             <th className="p-4 pr-8 text-right">Score</th>
                           </tr>
                         </thead>
@@ -1262,13 +1234,13 @@ const App = () => {
                   )}
                   {viewMode === 'graph' && <KnowledgeGraph targets={researchState.targets} selectedId={researchState.focusSymbol || undefined} onSelect={(t)=>setResearchState(p=>({...p, focusSymbol: t?.symbol || null}))} theme={theme} />}
                   {viewMode === 'terrain' && <GeneTerrain targets={researchState.targets} selectedId={researchState.targets.find(t=>t.symbol===researchState.focusSymbol)?.id} onSelect={(t)=>setResearchState(p=>({...p, focusSymbol: t?.symbol || null}))} theme={theme} />}
-                  {(viewMode === 'brca_high' || viewMode === 'brca_low') && researchState.survivalMetrics && (
+                  {viewMode === 'survival' && researchState.survivalMetrics && (
                     <GeneTerrain 
                       targets={researchState.targets.map(t => ({ ...t, value: researchState.survivalMetrics?.[t.symbol]?.delta || 0 }))} 
                       selectedId={researchState.targets.find(t=>t.symbol===researchState.focusSymbol)?.id} 
                       onSelect={(t)=>setResearchState(p=>({...p, focusSymbol: t?.symbol || null}))} 
                       theme={theme} 
-                      mode={viewMode as 'brca_high' | 'brca_low'}
+                      mode="survival"
                     />
                   )}
                   {viewMode === 'raw' && <RawDataView targets={researchState.targets} theme={theme} />}
@@ -1296,8 +1268,8 @@ const App = () => {
                     <div className="grid grid-cols-2 gap-3">
                       {[ 
                         {l:'Genetic',v:t.geneticScore, c:'emerald'}, 
-                        {l:'Transcript',v:t.combinedExpression || 0, c:'blue'}, 
-                        {l:'Drugability',v:t.targetScore, c:'amber'}, 
+                        {l:'Expression',v:t.combinedExpression || 0, c:'blue'}, 
+                        {l:'Target',v:t.targetScore, c:'amber'}, 
                         {l:'Priority',v:t.overallScore, c:'indigo'} 
                       ].map(s=>(
                         <div key={s.l} className={`p-4 rounded-lg border shadow-sm ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-neutral-50 border-neutral-200'}`}>
