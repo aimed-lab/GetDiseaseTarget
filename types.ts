@@ -19,6 +19,8 @@ export interface Target {
   vx?: number;
   vy?: number;
   value?: number;
+  delta?: number;
+  normalizedDelta?: number;
 }
 
 export interface DrugInfo {
@@ -71,7 +73,10 @@ export interface SurvivalMetrics {
   [symbol: string]: {
     meanHigh: number;
     meanLow: number;
-    delta: number;
+    highDiff: number;
+    lowDiff: number;
+    highStatus: 'up' | 'down' | 'neutral';
+    lowStatus: 'up' | 'down' | 'neutral';
   };
 }
 

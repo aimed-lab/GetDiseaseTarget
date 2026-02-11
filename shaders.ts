@@ -17,7 +17,7 @@ export const terrainFragmentShader = `
   uniform vec2 resolution;
   uniform vec2 offset;
   uniform float scale;
-  uniform int isSurvival;
+  uniform int renderMode; // 0: Default/Spectral, 1: Survival Cohort Diverging (Red/Blue)
 
   float gaussian2D(vec2 point, vec2 center) {
     vec2 d = (point - center);
@@ -47,18 +47,20 @@ export const terrainFragmentShader = `
     }
     
     vec3 col;
-    if (isSurvival == 1) {
-      if (value > 0.0) {
-        col = vec3(0.93, 0.26, 0.26); // Red for upregulated/amplification
+    if (renderMode == 1 || renderMode == 2) {
+      // Survival Diverging Mode: Red for high expression relative to group median, Blue for low.
+      if (value >= 0.0) {
+        col = mix(vec3(0.98, 0.98, 0.98), vec3(0.93, 0.26, 0.26), clamp(value * 3.5, 0.0, 1.0));
       } else {
-        col = vec3(0.14, 0.38, 0.92); // Blue for downregulated/inhibition
+        col = mix(vec3(0.98, 0.98, 0.98), vec3(0.14, 0.38, 0.92), clamp(abs(value) * 3.5, 0.0, 1.0));
       }
     } else {
+      // Default - Spectral
       col = spectral(value);
     }
     
     float intensity = clamp(abs(value) * 3.0, 0.0, 1.0);
-    gl_FragColor = vec4(col, 0.7 * intensity + 0.1);
+    gl_FragColor = vec4(col, 0.75 * intensity + 0.1);
   }
 `;
 
@@ -90,11 +92,11 @@ export const contourFragmentShader = `
       float val = texture2D(valuesTexture, vec2((float(i) + 0.5) / 1024.0, 0.5)).r;
       value += val * gaussian2D(worldPos, pt);
     }
-    float scaledValue = value / isolineSpacing;
+    float scaledValue = abs(value) / isolineSpacing;
     float discreteValue = floor(scaledValue + 0.5);
     float isoline = abs(scaledValue - discreteValue);
     if (isoline < lineThickness) {
-      gl_FragColor = vec4(0.0, 0.8, 0.9, 1.0);
+      gl_FragColor = vec4(0.0, 0.8, 0.9, 0.8);
     } else {
       gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
     }
