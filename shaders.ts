@@ -17,7 +17,7 @@ export const terrainFragmentShader = `
   uniform vec2 resolution;
   uniform vec2 offset;
   uniform float scale;
-  uniform int renderMode; // 0: Default/Spectral, 1: Survival Cohort Diverging (Red/Blue)
+  uniform int renderMode; // 0: Default/Spectral, 1: Survival Cohort Intensity (Blue -> Red)
 
   float gaussian2D(vec2 point, vec2 center) {
     vec2 d = (point - center);
@@ -47,13 +47,10 @@ export const terrainFragmentShader = `
     }
     
     vec3 col;
-    if (renderMode == 1 || renderMode == 2) {
-      // Survival Diverging Mode: Red for high expression relative to group median, Blue for low.
-      if (value >= 0.0) {
-        col = mix(vec3(0.98, 0.98, 0.98), vec3(0.93, 0.26, 0.26), clamp(value * 3.5, 0.0, 1.0));
-      } else {
-        col = mix(vec3(0.98, 0.98, 0.98), vec3(0.14, 0.38, 0.92), clamp(abs(value) * 3.5, 0.0, 1.0));
-      }
+    if (renderMode == 1) {
+      // Survival Intensity Mode: Simple gradient from low (blue/light) to high (red).
+      float t = clamp(value, 0.0, 1.0);
+      col = mix(vec3(0.1, 0.4, 0.8), vec3(0.9, 0.2, 0.2), t);
     } else {
       // Default - Spectral
       col = spectral(value);

@@ -1,4 +1,3 @@
-
 import { Target, DrugInfo, DiseaseInfo, EnrichmentResult, PubMedStats, ClinicalSample, ExpressionRow } from './types';
 
 const OPEN_TARGETS_API = 'https://api.platform.opentargets.org/api/v4/graphql';
@@ -62,7 +61,6 @@ export const api = {
         const expressionScore = r.datatypeScores.find((s:any) => s.id.includes('rna'))?.score || 0;
         const targetScore = r.datatypeScores.find((s:any) => s.id.includes('drug'))?.score || 0;
 
-        // Upfront Baseline Brain Expression Processing
         const expressions = r.target.expressions || [];
         const brainTissues = ['brain', 'cortex', 'hippocampus', 'cerebellum'];
         const relevant = expressions.filter((e: any) => 
@@ -157,6 +155,14 @@ export const api = {
   async getBrcaExpression(sampleId: string): Promise<ExpressionRow[]> {
     try {
       const res = await fetch(`https://aimed.uab.edu/apex/gtkb/gene_exp/pancan/brca/${sampleId}`);
+      const data = await res.json();
+      return data.items || [];
+    } catch (e) { return []; }
+  },
+
+  async getSurvivalMeans(): Promise<any[]> {
+    try {
+      const res = await fetch('https://aimed.uab.edu/apex/gtkb/brcatest/survival-means');
       const data = await res.json();
       return data.items || [];
     } catch (e) { return []; }

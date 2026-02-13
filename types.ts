@@ -73,6 +73,12 @@ export interface SurvivalMetrics {
   [symbol: string]: {
     meanHigh: number;
     meanLow: number;
+    nHigh: number;
+    nLow: number;
+    nUsedHigh: number;
+    nUsedLow: number;
+    log1pHigh: number;
+    log1pLow: number;
     highDiff: number;
     lowDiff: number;
     highStatus: 'up' | 'down' | 'neutral';
@@ -81,7 +87,7 @@ export interface SurvivalMetrics {
 }
 
 export type Theme = 'dark' | 'light';
-export type ViewMode = 'list' | 'correlation' | 'enrichment' | 'graph' | 'terrain' | 'raw' | 'survival';
+export type ViewMode = 'list' | 'correlation' | 'enrichment' | 'graph' | 'terrain' | 'survival' | 'raw';
 export type TerrainLayer = 'gaussian' | 'discrete' | 'water' | 'sky';
 
 export interface ResearchContext {
@@ -93,6 +99,7 @@ export interface ResearchContext {
   focusSymbol: string | null;
   survivalMetrics?: SurvivalMetrics;
   isAnalyzingSurvival?: boolean;
+  medianOs?: number;
 }
 
 export interface Message {
