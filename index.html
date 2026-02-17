@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>GetGene | Research Platform</title>
+    <title>GetGene | AI Drug Discovery</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
@@ -44,19 +44,26 @@
       ::-webkit-scrollbar-track {
         background: transparent; 
       }
-      ::-webkit-scrollbar {
-        width: 4px;
-        height: 4px;
-      }
-      ::-webkit-scrollbar-track {
-        background: transparent; 
-      }
       ::-webkit-scrollbar-thumb {
         background: rgba(107, 114, 128, 0.2); 
         border-radius: 4px;
       }
       ::-webkit-scrollbar-thumb:hover {
         background: rgba(107, 114, 128, 0.4); 
+      }
+      /* Custom scrollbar for horizontal tabs */
+      .custom-scrollbar-x::-webkit-scrollbar {
+        height: 4px;
+      }
+      .custom-scrollbar-x::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .custom-scrollbar-x::-webkit-scrollbar-thumb {
+        background: rgba(37, 99, 235, 0.1);
+        border-radius: 4px;
+      }
+      .custom-scrollbar-x:hover::-webkit-scrollbar-thumb {
+        background: rgba(37, 99, 235, 0.3);
       }
     </style>
     <script type="importmap">

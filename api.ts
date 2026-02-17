@@ -1,4 +1,5 @@
 import { Target, DrugInfo, DiseaseInfo, EnrichmentResult, PubMedStats, ClinicalSample, ExpressionRow } from './types';
+import { GoogleGenAI } from "@google/genai";
 
 const OPEN_TARGETS_API = 'https://api.platform.opentargets.org/api/v4/graphql';
 const ENRICHR_API = 'https://maayanlab.cloud/Enrichr';
@@ -9,20 +10,49 @@ export const api = {
     const GQL_QUERY = `
       query SearchDisease($queryString: String!) {
         search(queryString: $queryString, entityNames: ["disease"], page: {index: 0, size: 25}) {
-          hits { id name description }
+          hits { id name score description }
         }
       }
     `;
-    try {
-      const res = await fetch(OPEN_TARGETS_API, { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ query: GQL_QUERY, variables: { queryString: query } }) 
-      });
-      const result = await res.json();
-      let hits = result.data?.search?.hits || [];
-      return hits.map((h: any) => ({ id: h.id, name: h.name }));
-    } catch (err) { return []; }
+
+    const executeSearch = async (searchTerm: string) => {
+      try {
+        const res = await fetch(OPEN_TARGETS_API, { 
+          method: 'POST', 
+          headers: { 'Content-Type': 'application/json' }, 
+          body: JSON.stringify({ query: GQL_QUERY, variables: { queryString: searchTerm } }) 
+        });
+        const result = await res.json();
+        return result.data?.search?.hits || [];
+      } catch (err) { return []; }
+    };
+
+    // Stage 1: Direct Search
+    let hits = await executeSearch(query);
+
+    // Stage 2: Semantic Correction Fallback
+    // If no hits found or query looks like a misspelling (imprecise), use Gemini to normalize
+    if (hits.length === 0 || query.length < 4 || /^[A-Z\s]+$/.test(query)) {
+      try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const correctionResponse = await ai.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: `Identify the single most likely standard clinical disease name for the following potentially misspelled or imprecise term: "${query}". Return only the corrected name string, nothing else.`,
+        });
+        
+        const correctedQuery = correctionResponse.text?.trim();
+        if (correctedQuery && correctedQuery.toLowerCase() !== query.toLowerCase()) {
+          const secondHits = await executeSearch(correctedQuery);
+          if (secondHits.length > 0) {
+            hits = secondHits;
+          }
+        }
+      } catch (e) {
+        console.error("Semantic correction failed", e);
+      }
+    }
+
+    return hits.map((h: any) => ({ id: h.id, name: h.name, score: h.score }));
   },
 
   async getGenes(efoId: string, size: number = 30, page: number = 0): Promise<Target[]> {
@@ -118,29 +148,43 @@ export const api = {
   },
 
   async getPubMedStats(symbol: string, diseaseName: string): Promise<PubMedStats> {
-    const query = `(${diseaseName}[Title/Abstract]) AND (${symbol}[Gene])`;
-    const searchLink = `https://pubmed.ncbi.nlm.nih.gov/?term=${encodeURIComponent(diseaseName)}+AND+${encodeURIComponent(symbol)}&filter=years.2024-2025&sort=pubdate`;
-    const primarySearchLink = `https://pubmed.ncbi.nlm.nih.gov/?term=(${encodeURIComponent(`"${diseaseName}"`)}[Title/Abstract])AND${encodeURIComponent(symbol)}[Gene]AND("2024"[Date+-+Publication]+:+ "2025"[Date+-+Publication])&sort=pubdate`;
+    const apiKeyParam = process.env.NCBI_API_KEY ? `&api_key=${process.env.NCBI_API_KEY}` : '';
+    const baseQuery = `("${diseaseName}"[Title/Abstract]) AND ("${symbol}"[Title/Abstract])`;
+    const recentQuery = `${baseQuery} AND ("2024"[Date - Publication] : "2025"[Date - Publication])`;
+
+    const searchLink = `https://pubmed.ncbi.nlm.nih.gov/?term=${encodeURIComponent(recentQuery)}&sort=pubdate`;
+    const primarySearchLink = searchLink;
+
     try {
-      const totalSearch = await fetch(`${PUBMED_API}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(query)}&retmode=json`);
-      const totalData = await totalSearch.json();
-      const total = parseInt(totalData.esearchresult.count || "0");
-      
-      const recentQuery = `${query} AND ("2024"[Date - Publication] : "2025"[Date - Publication])`;
-      const recentSearch = await fetch(`${PUBMED_API}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(recentQuery)}&retmode=json`);
-      const recentData = await recentSearch.json();
-      const recent = parseInt(recentData.esearchresult.count || "0");
-      const recentIds = recentData.esearchresult.idlist.slice(0, 3).join(',');
-      
-      let topPapers = [];
+      const [totalData, recentData] = await Promise.all([
+        fetch(`${PUBMED_API}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(baseQuery)}&retmode=json${apiKeyParam}`)
+          .then(r => r.json()),
+        fetch(`${PUBMED_API}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(recentQuery)}&retmode=json${apiKeyParam}`)
+          .then(r => r.json())
+      ]);
+
+      const total = parseInt(totalData.esearchresult.count || '0');
+      const recent = parseInt(recentData.esearchresult.count || '0');
+      const recentIds = (recentData.esearchresult.idlist ?? []).slice(0, 3).join(',');
+
+      let topPapers: { title: string; id: string }[] = [];
       if (recentIds) {
-        const summarySearch = await fetch(`${PUBMED_API}/esummary.fcgi?db=pubmed&id=${recentIds}&retmode=json`);
-        const summaryData = await summarySearch.json();
-        topPapers = Object.keys(summaryData.result).filter(k => k !== 'uids').map(k => ({ title: summaryData.result[k].title, id: k }));
+        const summaryData = await fetch(
+          `${PUBMED_API}/esummary.fcgi?db=pubmed&id=${recentIds}&retmode=json${apiKeyParam}`
+        ).then(r => r.json());
+
+        topPapers = (summaryData.result.uids ?? [])
+          .slice(0, 3)
+          .map((k: string) => ({
+            title: summaryData.result[k]?.title ?? 'Untitled',
+            id: k
+          }));
       }
+
       return { total, recent, topPapers, searchLink, primarySearchLink };
-    } catch (e) { 
-      return { total: 0, recent: 0, topPapers: [], searchLink, primarySearchLink: searchLink }; 
+    } catch (e) {
+      console.error(`PubMed fetch failed [${symbol}/${diseaseName}]:`, e);
+      return { total: 0, recent: 0, topPapers: [], searchLink, primarySearchLink };
     }
   },
 
