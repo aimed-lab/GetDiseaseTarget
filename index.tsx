@@ -449,8 +449,13 @@ const GeneTerrain = ({ targets, onSelect, selectedId, theme, mode = 'default', s
         let strokeColor: string | null = null;
         let glowColor: string | null = null;
         if (mode === 'survival' && survivalTab !== 'default') {
-          if (t.status === 'up') { pointColor = '#ef4444'; finalRadius *= 1.4; glowColor = 'rgba(239, 68, 68, 0.6)'; } 
-          else { pointColor = theme === 'dark' ? '#64748b' : '#a1a1aa'; strokeColor = '#ffffff'; }
+          // Gene plots are forced to grey as requested
+          pointColor = theme === 'dark' ? '#6b7280' : '#9ca3af'; 
+          if (t.status === 'up' || t.status === 'down') {
+            finalRadius *= 1.2;
+          }
+          strokeColor = theme === 'dark' ? '#111111' : '#ffffff';
+          glowColor = null; 
         } else if (!isSelected) {
           const brightness = Math.min(1, Math.abs(t.value) || 0);
           pointColor = theme === 'dark' ? `rgba(${140 + brightness * 80}, ${140 + brightness * 80}, ${140 + brightness * 80}, ${0.45 + brightness * 0.45})` : `rgba(${60 - brightness * 30}, ${60 - brightness * 30}, ${60 - brightness * 30}, ${0.55 + brightness * 0.4})`;
@@ -588,8 +593,8 @@ const App = () => {
         const m = metrics[symbol];
         m.highDiff = m.meanHigh;
         m.lowDiff = m.meanLow;
-        m.highStatus = m.highDiff > 0.85 ? 'up' : 'neutral';
-        m.lowStatus = m.lowDiff > 0.85 ? 'up' : 'neutral';
+        m.highStatus = m.highDiff > 0 ? 'up' : (m.highDiff < 0 ? 'down' : 'neutral');
+        m.lowStatus = m.lowDiff > 0 ? 'up' : (m.lowDiff < 0 ? 'down' : 'neutral');
       });
 
       setResearchState(p => ({ 

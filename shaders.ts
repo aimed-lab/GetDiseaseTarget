@@ -48,16 +48,24 @@ export const terrainFragmentShader = `
     
     vec3 col;
     if (renderMode == 1) {
-      // Survival Intensity Mode: Simple gradient from low (blue/light) to high (red).
-      float t = clamp(value, 0.0, 1.0);
-      col = mix(vec3(0.1, 0.4, 0.8), vec3(0.9, 0.2, 0.2), t);
+      // Survival Intensity Mode: Red for positive, Blue for negative
+      vec3 blue = vec3(0.0, 0.0, 1.0); // Pure Blue
+      vec3 red = vec3(1.0, 0.0, 0.0);  // Pure Red
+      vec3 neutral = vec3(0.05, 0.05, 0.05); // Dark base for better "amplification" visualization
+      if (value > 0.0) {
+        col = mix(neutral, red, clamp(value, 0.0, 1.0));
+      } else if (value < 0.0) {
+        col = mix(neutral, blue, clamp(-value, 0.0, 1.0));
+      } else {
+        col = neutral;
+      }
     } else {
       // Default - Spectral
       col = spectral(value);
     }
     
     float intensity = clamp(abs(value) * 3.0, 0.0, 1.0);
-    gl_FragColor = vec4(col, 0.75 * intensity + 0.1);
+    gl_FragColor = vec4(col, 0.75 * intensity + (renderMode == 1 ? 0.02 : 0.1));
   }
 `;
 
