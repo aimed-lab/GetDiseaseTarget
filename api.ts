@@ -206,7 +206,7 @@ export const api = {
 
   async getSurvivalMeans(): Promise<any[]> {
     try {
-      const res = await fetch('https://aimed.uab.edu/apex/gtkb/brcatest/survival-means');
+      const res = await fetch('https://aimed.uab.edu/apex/gtkb/brcatest/survival-means?limit=30');
       const data = await res.json();
       return data.items || [];
     } catch (e) { return []; }

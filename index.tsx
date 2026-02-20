@@ -836,7 +836,7 @@ const SignInPage = ({ theme, toggleTheme, onSignIn }: { theme: Theme, toggleThem
         <form onSubmit={e=>{e.preventDefault(); if(password===HARDCODED_PASSWORD) onSignIn("Researcher");}} className="space-y-4">
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold uppercase text-neutral-500 dark:text-neutral-500 ml-1 tracking-widest">Username</label>
-            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} className={`w-full p-4 rounded-xl border text-sm font-semibold outline-none transition-all ${theme === 'dark' ? 'bg-[#0a0a0a] border-neutral-800 text-white focus:border-blue-600' : 'bg-neutral-50 border-neutral-300 text-neutral-900 focus:border-blue-600 focus:bg-white'}`} placeholder="xxxx@uab.edu" />
+            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} className={`w-full p-4 rounded-xl border text-sm font-semibold outline-none transition-all ${theme === 'dark' ? 'bg-[#0a0a0a] border-neutral-800 text-white focus:border-blue-600' : 'bg-neutral-50 border-neutral-300 text-neutral-900 focus:border-blue-600 focus:bg-white'}`} placeholder="username@uab.edu" />
           </div>
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold uppercase text-neutral-500 dark:text-neutral-500 ml-1 tracking-widest">Password</label>
