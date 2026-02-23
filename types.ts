@@ -101,6 +101,7 @@ export interface ResearchContext {
   survivalMetrics?: SurvivalMetrics;
   isAnalyzingSurvival?: boolean;
   medianOs?: number;
+  filter?: { scoreType: string; threshold: number; operator: 'gt' | 'lt' };
 }
 
 export interface Message {
@@ -108,4 +109,5 @@ export interface Message {
   content: string;
   timestamp: Date;
   options?: DiseaseInfo[];
+  filterOptions?: { label: string; scoreType: string; threshold: number; operator: 'gt' | 'lt' }[];
 }

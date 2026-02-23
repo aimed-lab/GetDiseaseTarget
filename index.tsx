@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createRoot } from 'react-dom/client';
 import { GoogleGenAI, Type, Chat, GenerateContentResponse } from "@google/genai";
 import * as d3 from "d3";
+import Markdown from 'react-markdown';
+import './index.css';
 import { 
   Activity, 
   ChevronRight,
@@ -565,6 +567,15 @@ const App = () => {
   const chatScrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight; }, [messages]);
   const isBrcaActive = useMemo(() => researchState.activeDisease?.name.toLowerCase().includes('brca') || researchState.activeDisease?.name.toLowerCase().includes('breast'), [researchState.activeDisease]);
+  
+  const displayTargets = useMemo(() => {
+    if (!researchState.filter) return researchState.targets;
+    const { scoreType, threshold, operator } = researchState.filter;
+    return researchState.targets.filter(t => {
+      const val = (t as any)[scoreType];
+      return operator === 'gt' ? val > threshold : val < threshold;
+    });
+  }, [researchState.targets, researchState.filter]);
 
   const analyzeBrcaSurvival = useCallback(async () => {
     if (!isBrcaActive || researchState.targets.length === 0) return;
@@ -655,6 +666,28 @@ const App = () => {
           return `Loaded ${genes.length} additional prioritized targets. Current total: ${combinedTargets.length}.`;
         }
         case 'update_view': { setViewMode(args.mode); return `Visualization focus shifted to ${args.mode}.`; }
+        case 'get_score_distribution': {
+          const scores = researchState.targets.map(t => (t as any)[args.scoreType]).filter(v => v !== undefined).sort((a, b) => a - b);
+          if (scores.length === 0) return "No data available for this score type.";
+          const min = scores[0];
+          const max = scores[scores.length - 1];
+          const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+          const p25 = scores[Math.floor(scores.length * 0.25)];
+          const p50 = scores[Math.floor(scores.length * 0.5)];
+          const p75 = scores[Math.floor(scores.length * 0.75)];
+          return `Distribution for ${args.scoreType}: Min: ${min.toFixed(3)}, Max: ${max.toFixed(3)}, Avg: ${avg.toFixed(3)}. Percentiles: 25th: ${p25.toFixed(3)}, 50th (Median): ${p50.toFixed(3)}, 75th: ${p75.toFixed(3)}. Total targets: ${scores.length}.`;
+        }
+        case 'apply_filter': {
+          setResearchState(prev => ({ ...prev, filter: { scoreType: args.scoreType, threshold: args.threshold, operator: args.operator } }));
+          return `Filter applied: ${args.scoreType} ${args.operator === 'gt' ? '>' : '<'} ${args.threshold}.`;
+        }
+        case 'clear_filter': {
+          setResearchState(prev => ({ ...prev, filter: undefined }));
+          return "Filter cleared.";
+        }
+        case 'suggest_filters': {
+          return { content: args.message, filterOptions: args.suggestions };
+        }
         default: return "Acknowledged.";
       }
     } catch (err) { return "Operation error."; } finally { setLoading(false); }
@@ -663,21 +696,23 @@ const App = () => {
   const handleChat = async (e: React.FormEvent) => {
     e.preventDefault(); if (!chatInput.trim() || isChatting) return;
     const userMsg: Message = { role: 'user', content: chatInput, timestamp: new Date() };
-    setMessages(prev => [...prev, userMsg]); setChatInput(""); setIsChatting(true);
+    const currentMessages = [...messages, userMsg];
+    setMessages(currentMessages); setChatInput(""); setIsChatting(true);
+    
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const tools = [
         { name: 'search_diseases', parameters: { type: Type.OBJECT, properties: { query: { type: Type.STRING } }, required: ['query'] } },
         { name: 'get_genes', parameters: { type: Type.OBJECT, properties: { id: { type: Type.STRING }, name: { type: Type.STRING } }, required: ['id', 'name'] } },
         { name: 'load_more', parameters: { type: Type.OBJECT, properties: {}, required: [] } },
-        { name: 'update_view', parameters: { type: Type.OBJECT, properties: { mode: { type: Type.STRING, enum: ['list', 'correlation', 'enrichment', 'graph', 'terrain', 'survival', 'raw'] } }, required: ['mode'] } }
+        { name: 'update_view', parameters: { type: Type.OBJECT, properties: { mode: { type: Type.STRING, enum: ['list', 'correlation', 'enrichment', 'graph', 'terrain', 'survival', 'raw'] } }, required: ['mode'] } },
+        { name: 'get_score_distribution', parameters: { type: Type.OBJECT, properties: { scoreType: { type: Type.STRING, enum: ['geneticScore', 'expressionScore', 'targetScore', 'overallScore'] } }, required: ['scoreType'] } },
+        { name: 'apply_filter', parameters: { type: Type.OBJECT, properties: { scoreType: { type: Type.STRING, enum: ['geneticScore', 'expressionScore', 'targetScore', 'overallScore'] }, threshold: { type: Type.NUMBER }, operator: { type: Type.STRING, enum: ['gt', 'lt'] } }, required: ['scoreType', 'threshold', 'operator'] } },
+        { name: 'clear_filter', parameters: { type: Type.OBJECT, properties: {}, required: [] } },
+        { name: 'suggest_filters', parameters: { type: Type.OBJECT, properties: { message: { type: Type.STRING }, suggestions: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { label: { type: Type.STRING }, scoreType: { type: Type.STRING }, threshold: { type: Type.NUMBER }, operator: { type: Type.STRING, enum: ['gt', 'lt'] } }, required: ['label', 'scoreType', 'threshold', 'operator'] } } }, required: ['message', 'suggestions'] } }
       ];
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
-        contents: [...messages, userMsg].map(m => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.content }] })),
-        config: { 
-          tools: [{ functionDeclarations: tools as any }], 
-          systemInstruction: `You are the GetGene AI Assistant. You help researchers discover drug targets and explain the application's architecture and sources.
+
+      const systemInstruction = `You are the GetGene AI Assistant. You help researchers discover drug targets and explain the application's architecture and sources.
 
 App Knowledge:
 1. Retrieval Process: Genes are retrieved from the Open Targets Platform using GraphQL queries. They are prioritized using evidence scores spanning Genetic associations, RNA expression, and Drug targetability.
@@ -691,17 +726,75 @@ App Knowledge:
 Behavior Guidelines:
 - Answer technical questions about "how the app works" or its "sources" directly using the facts above.
 - If the user provides a disease name (even if misspelled like 'alzheimers'), use the 'search_diseases' tool.
-- Help users navigate visualizations by using the 'update_view' tool when they express interest in different data formats.
-- Maintain a professional, scientific, and helpful tone.`
-        }
+- Help users navigate visualizations by using the 'update_view' tool ONLY when they express interest in different data formats. Do NOT call this tool automatically unless requested.
+- When a user asks to filter the table (e.g., "filter by genetic score"), follow this protocol:
+  1. Call 'get_score_distribution' for the requested score type.
+  2. MANDATORY: Once you have the distribution stats, use the 'suggest_filters' tool to provide a conversational message and a set of interactive filter buttons.
+  3. Suggest at least 2-3 meaningful thresholds based on the percentiles (e.g., "Top 25%", "Top 50%", "High Confidence").
+  4. The 'suggest_filters' tool will render buttons in the UI for the user to click.
+  5. If the user agrees or specifies a threshold, call 'apply_filter'.
+  6. To remove filters, call 'clear_filter'.
+- Formatting: Always use Markdown for your responses. Use bolding, lists, and headers to make information scannable.
+- Tool Usage: Do NOT call multiple unrelated tools in one turn unless strictly necessary. For example, do not call 'get_genes' and 'update_view' unless the user specifically asked for both.
+- Maintain a professional, scientific, and helpful tone.`;
+
+      let response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: currentMessages.map(m => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.content }] })),
+        config: { tools: [{ functionDeclarations: tools as any }], systemInstruction }
       });
+
       if (response.functionCalls?.length) {
+        let currentHistory = [...currentMessages];
+        let silentTools = ['get_score_distribution', 'search_diseases'];
+        
         for (const fc of response.functionCalls) {
           const res = await handleToolExecution(fc.name, fc.args);
-          setMessages(prev => [...prev, { role: 'assistant', content: typeof res === 'string' ? res : res.content, options: typeof res === 'string' ? undefined : res.options, timestamp: new Date() }]);
+          const toolMsg: Message = { 
+            role: 'assistant', 
+            content: typeof res === 'string' ? res : res.content, 
+            options: typeof res === 'string' ? undefined : res.options,
+            filterOptions: typeof res === 'string' ? undefined : res.filterOptions,
+            timestamp: new Date() 
+          };
+          currentHistory.push(toolMsg);
+          
+          // Only show in UI if not a silent data-gathering tool
+          if (!silentTools.includes(fc.name)) {
+            setMessages(prev => [...prev, toolMsg]);
+          }
         }
-      } else setMessages(prev => [...prev, { role: 'assistant', content: response.text || "Synthesizing response...", timestamp: new Date() }]);
-    } catch (e) { setMessages(prev => [...prev, { role: 'assistant', content: "Protocol error.", timestamp: new Date() }]); } finally { setIsChatting(false); }
+
+        // Always do a second pass if tools were called to provide a natural response
+        const secondResponse = await ai.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: currentHistory.map(m => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.content }] })),
+          config: { tools: [{ functionDeclarations: tools as any }], systemInstruction }
+        });
+        
+        if (secondResponse.functionCalls?.length) {
+          for (const fc of secondResponse.functionCalls) {
+            const res = await handleToolExecution(fc.name, fc.args);
+            const toolMsg: Message = { 
+              role: 'assistant', 
+              content: typeof res === 'string' ? res : res.content, 
+              options: typeof res === 'string' ? undefined : res.options,
+              filterOptions: typeof res === 'string' ? undefined : res.filterOptions,
+              timestamp: new Date() 
+            };
+            setMessages(prev => [...prev, toolMsg]);
+          }
+        } else if (secondResponse.text) {
+          setMessages(prev => [...prev, { role: 'assistant', content: secondResponse.text!, timestamp: new Date() }]);
+        }
+      } else {
+        setMessages(prev => [...prev, { role: 'assistant', content: response.text || "Synthesizing response...", timestamp: new Date() }]);
+      }
+    } catch (e) { 
+      setMessages(prev => [...prev, { role: 'assistant', content: "Protocol error.", timestamp: new Date() }]); 
+    } finally { 
+      setIsChatting(false); 
+    }
   };
 
   if (!isAuthenticated) return <SignInPage theme={theme} toggleTheme={() => setTheme(t=>t==='dark'?'light':'dark')} onSignIn={e => { localStorage.setItem('pharm_user', e); setIsAuthenticated(true); }} />;
@@ -722,7 +815,38 @@ Behavior Guidelines:
         <aside className={`border-r flex flex-col shrink-0 transition-all duration-300 ${isLeftSidebarOpen ? 'w-[360px]' : 'w-0 opacity-0 pointer-events-none'} ${theme === 'dark' ? 'bg-[#0d0d0d] border-neutral-800' : 'bg-white'}`}>
            <div className="p-4 border-b border-neutral-100 dark:border-neutral-800 text-[10px] font-bold uppercase text-neutral-600 dark:text-neutral-500 flex items-center justify-between tracking-wider">Terminal Evidence<button onClick={() => setIsLeftSidebarOpen(false)} className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800"><PanelLeft className="w-3.5 h-3.5" /></button></div>
            <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-5 space-y-6">
-              {messages.map((m, i) => (<div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}><div className={`max-w-[95%] p-4 rounded-xl text-[14px] shadow-sm ${m.role === 'user' ? 'bg-blue-600 text-white' : (theme === 'dark' ? 'bg-[#171717] border border-neutral-800' : 'bg-neutral-100 text-neutral-900 border border-neutral-200')}`}>{m.content}{m.options && (<div className="mt-4 space-y-2">{m.options.map(o => (<button key={o.id} onClick={() => handleToolExecution('get_genes', { id: o.id, name: o.name }).then(res => setMessages(prev => [...prev, { role: 'assistant', content: typeof res === 'string' ? res : res.content, timestamp: new Date() }]))} className="w-full p-3 rounded-lg bg-blue-600/10 border border-blue-600/20 text-left text-[11px] font-semibold uppercase hover:bg-blue-600 hover:text-white transition-all shadow-sm">{o.name}</button>))}</div>)}</div></div>))}
+              {messages.map((m, i) => (
+                <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
+                  <div className={`max-w-[95%] p-4 rounded-xl text-[14px] shadow-sm ${m.role === 'user' ? 'bg-blue-600 text-white' : (theme === 'dark' ? 'bg-[#171717] border border-neutral-800' : 'bg-neutral-100 text-neutral-900 border border-neutral-200')}`}>
+                    <div className="markdown-body prose prose-sm dark:prose-invert max-w-none">
+                      <Markdown>{m.content}</Markdown>
+                    </div>
+                    {m.options && (
+                      <div className="mt-4 space-y-2">
+                        {m.options.map(o => (
+                          <button key={o.id} onClick={() => handleToolExecution('get_genes', { id: o.id, name: o.name }).then(res => setMessages(prev => [...prev, { role: 'assistant', content: typeof res === 'string' ? res : res.content, timestamp: new Date() }]))} className="w-full p-3 rounded-lg bg-blue-600/10 border border-blue-600/20 text-left text-[11px] font-semibold uppercase hover:bg-blue-600 hover:text-white transition-all shadow-sm">
+                            {o.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {m.filterOptions && (
+                      <div className="mt-4 grid grid-cols-1 gap-2">
+                        {m.filterOptions.map((f, idx) => (
+                          <button 
+                            key={idx} 
+                            onClick={() => handleToolExecution('apply_filter', f).then(res => setMessages(prev => [...prev, { role: 'assistant', content: typeof res === 'string' ? res : res.content, timestamp: new Date() }]))}
+                            className="w-full p-3 rounded-lg bg-emerald-600/10 border border-emerald-600/20 text-left text-[11px] font-semibold uppercase hover:bg-emerald-600 hover:text-white transition-all shadow-sm flex items-center justify-between"
+                          >
+                            <span>{f.label}</span>
+                            <span className="opacity-60 font-mono">{f.operator === 'gt' ? '>' : '<'} {f.threshold}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
               {isChatting && (<div className="flex items-center gap-2 text-blue-600 px-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /><span className="text-[10px] font-bold uppercase tracking-widest">Synthesizing...</span></div>)}
            </div>
            <form onSubmit={handleChat} className="p-4 border-t border-neutral-100 dark:border-neutral-800"><div className="relative"><input type="text" value={chatInput} onChange={e=>setChatInput(e.target.value)} placeholder="Analyze condition..." className={`w-full p-3 pr-10 text-sm rounded-xl border outline-none ${theme === 'dark' ? 'bg-[#171717] border-neutral-800 text-white placeholder-neutral-600' : 'bg-neutral-50 border-neutral-300 text-neutral-900 shadow-inner'}`} /><button type="submit" className="absolute right-2 top-2 p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"><Send className="w-4 h-4" /></button></div></form>
@@ -750,7 +874,7 @@ Behavior Guidelines:
                             <tr><th className="p-4 pl-8">Gene</th><th className="p-4 hidden md:table-cell">Gene Name</th><th className="p-4 text-center">Genetic</th><th className="p-4 text-center">Expression</th><th className="p-4 text-center">Target</th><th className="p-4 pr-8 text-right">Overall Score</th></tr>
                           </thead>
                           <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-                            {researchState.targets.map(t => (
+                            {displayTargets.map(t => (
                               <tr key={t.id} onClick={()=>setResearchState(p=>({...p, focusSymbol: t.symbol}))} className={`cursor-pointer transition-colors hover:bg-blue-50/30 dark:hover:bg-neutral-800/20 ${researchState.focusSymbol === t.symbol ? 'bg-blue-100/30 dark:bg-blue-900/10' : ''}`}>
                                 <td className="p-4 pl-8 font-bold text-blue-700 dark:text-blue-500 text-[13px]">{t.symbol}</td>
                                 <td className={`p-4 text-[12px] hidden md:table-cell ${theme === 'dark' ? 'text-neutral-400' : 'text-neutral-900'}`}>{t.name}</td>
@@ -764,8 +888,18 @@ Behavior Guidelines:
                         </table>
                         {researchState.activeDisease && (
                           <div className="p-8 flex flex-col items-center gap-4 border-t border-neutral-100 dark:border-neutral-800 bg-neutral-50/30 dark:bg-transparent">
+                            {researchState.filter && (
+                              <div className="flex items-center gap-3 px-4 py-2 rounded-full bg-blue-100 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 mb-2">
+                                <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">
+                                  Filter: {researchState.filter.scoreType} {researchState.filter.operator === 'gt' ? '>' : '<'} {researchState.filter.threshold}
+                                </span>
+                                <button onClick={() => setResearchState(p => ({ ...p, filter: undefined }))} className="p-1 hover:bg-blue-200 dark:hover:bg-blue-800 rounded-full transition-colors">
+                                  <X className="w-3 h-3 text-blue-600" />
+                                </button>
+                              </div>
+                            )}
                             <button onClick={() => handleToolExecution('load_more', {})} disabled={loading} className={`group px-10 py-4 rounded-2xl bg-blue-600 text-white text-[12px] font-bold uppercase tracking-widest hover:bg-blue-700 active:scale-95 transition-all flex items-center gap-3 shadow-lg shadow-blue-600/25 disabled:opacity-50`}>{loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform" />} Load More Analysis</button>
-                            <p className="text-[10px] font-bold text-neutral-500 dark:text-neutral-500 uppercase tracking-tighter">Cohort Depth: {researchState.currentPage + 1} | Buffer: 30 Targets</p>
+                            <p className="text-[10px] font-bold text-neutral-500 dark:text-neutral-500 uppercase tracking-tighter">Cohort Depth: {researchState.currentPage + 1} | Buffer: 30 Targets | Showing: {displayTargets.length}</p>
                           </div>
                         )}
                       </div>
