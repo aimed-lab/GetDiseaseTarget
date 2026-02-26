@@ -485,8 +485,8 @@ const GeneTerrain = ({ targets, onSelect, selectedId, theme, mode = 'default', s
         <div className={`px-4 py-2 flex items-center justify-between border-b ${theme === 'dark' ? 'bg-[#0d0d0d] border-neutral-800' : 'bg-neutral-50 border-neutral-100'}`}>
           <div className="flex items-center gap-1">
             <button onClick={() => setSurvivalTab('default')} className={`px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all ${survivalTab === 'default' ? 'bg-blue-500 text-white shadow-sm' : 'text-neutral-500 hover:bg-neutral-200 dark:hover:bg-neutral-800'}`}>Default Terrain</button>
-            <button onClick={() => setSurvivalTab('high')} className={`px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all ${survivalTab === 'high' ? 'bg-emerald-600 text-white shadow-sm' : 'text-neutral-500 hover:bg-neutral-200 dark:hover:bg-neutral-800'}`}>High Survival (Survivors)</button>
-            <button onClick={() => setSurvivalTab('low')} className={`px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all ${survivalTab === 'low' ? 'bg-rose-600 text-white shadow-sm' : 'text-neutral-500 hover:bg-neutral-200 dark:hover:bg-neutral-800'}`}>Low Survival (Non-Survivors)</button>
+            <button onClick={() => setSurvivalTab('high')} className={`px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all ${survivalTab === 'high' ? 'bg-[#EB4236] text-white shadow-sm' : 'text-neutral-500 hover:bg-neutral-200 dark:hover:bg-neutral-800'}`}>High Survival (Survivors)</button>
+            <button onClick={() => setSurvivalTab('low')} className={`px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all ${survivalTab === 'low' ? 'bg-[#4285F5] text-white shadow-sm' : 'text-neutral-500 hover:bg-neutral-200 dark:hover:bg-neutral-800'}`}>Low Survival (Non-Survivors)</button>
           </div>
         </div>
       )}
@@ -527,7 +527,7 @@ const RawDataView = ({ targets, theme }: { targets: Target[], theme: Theme }) =>
     <div className="h-full flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-neutral-100 dark:divide-neutral-800">
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="p-4 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between"><div className="flex items-center gap-2"><Stethoscope className="w-4 h-4 text-neutral-500" /><span className="text-[12px] font-semibold text-neutral-700 dark:text-neutral-400">Cohort Explorer</span></div><div className="flex items-center gap-2"><button onClick={() => setOffset(Math.max(0, offset - 10))} disabled={offset === 0} className="p-1 rounded hover:bg-neutral-100 transition-colors"><ChevronLeft className="w-4 h-4" /></button><span className="text-[10px] font-mono text-neutral-600 dark:text-neutral-500">P. {offset/10 + 1}</span><button onClick={() => setOffset(offset + 10)} className="p-1 rounded hover:bg-neutral-100 transition-colors"><ChevronRight className="w-4 h-4" /></button></div></div>
-        <div className="flex-1 overflow-auto">{loadingClinical ? (<div className="h-full flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>) : (<table className="w-full text-left"><thead className="sticky top-0 bg-neutral-50 dark:bg-neutral-900 border-b border-neutral-100 dark:border-neutral-800 z-10"><tr><th className="p-4 text-[10px] font-bold text-neutral-600 dark:text-neutral-500 uppercase pl-6">Sample ID</th><th className="p-4 text-[10px] font-bold text-neutral-600 dark:text-neutral-500 uppercase">Type</th><th className="p-4 pr-6 text-right text-[10px] font-bold text-neutral-600 dark:text-neutral-500 uppercase">Status</th></tr></thead><tbody className="divide-y divide-neutral-50 dark:divide-neutral-800">{clinicalData.map(sample => (<tr key={sample.sampleid} onClick={() => handleSelectSample(sample)} className={`cursor-pointer transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-800/50 ${selectedSample?.sampleid === sample.sampleid ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}><td className="p-4 pl-6 font-mono text-[11px] text-blue-600 dark:text-blue-400">{sample.sampleid}</td><td className="p-4 text-[11px] text-neutral-700 dark:text-neutral-400">{sample.vital_status === 'Alive' ? 'Alive' : 'Deceased'}</td><td className={`p-4 pr-6 text-right text-[11px] font-medium ${sample.vital_status === 'Alive' ? 'text-emerald-600' : 'text-rose-600'}`}>{sample.vital_status}</td></tr>))}</tbody></table>)}</div>
+        <div className="flex-1 overflow-auto">{loadingClinical ? (<div className="h-full flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>) : (<table className="w-full text-left"><thead className="sticky top-0 bg-neutral-50 dark:bg-neutral-900 border-b border-neutral-100 dark:border-neutral-800 z-10"><tr><th className="p-4 text-[10px] font-bold text-neutral-600 dark:text-neutral-500 uppercase pl-6">Sample ID</th><th className="p-4 text-[10px] font-bold text-neutral-600 dark:text-neutral-500 uppercase">Type</th><th className="p-4 pr-6 text-right text-[10px] font-bold text-neutral-600 dark:text-neutral-500 uppercase">Status</th></tr></thead><tbody className="divide-y divide-neutral-50 dark:divide-neutral-800">{clinicalData.map(sample => (<tr key={sample.sampleid} onClick={() => handleSelectSample(sample)} className={`cursor-pointer transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-800/50 ${selectedSample?.sampleid === sample.sampleid ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}><td className="p-4 pl-6 font-mono text-[11px] text-blue-600 dark:text-blue-400">{sample.sampleid}</td><td className="p-4 text-[11px] text-neutral-700 dark:text-neutral-400">{sample.vital_status === 'Alive' ? 'Alive' : 'Deceased'}</td><td className={`p-4 pr-6 text-right text-[11px] font-medium ${sample.vital_status === 'Alive' ? 'text-[#EB4236]' : 'text-[#4285F5]'}`}>{sample.vital_status}</td></tr>))}</tbody></table>)}</div>
       </div>
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="p-4 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between"><div className="flex items-center gap-2"><Activity className="w-4 h-4 text-neutral-500" /><span className="text-[12px] font-semibold text-neutral-700 dark:text-neutral-400">Sample Expression</span></div><button onClick={() => setShowOnlyGetGenes(!showOnlyGetGenes)} className={`text-[10px] font-bold px-3 py-1 rounded border transition-colors ${showOnlyGetGenes ? 'bg-blue-500 text-white' : 'text-neutral-500'}`}>{showOnlyGetGenes ? 'FILTERED' : 'ALL'}</button></div>
@@ -566,6 +566,38 @@ const App = () => {
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight; }, [messages]);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const exportToNotion = async () => {
+    if (!researchState.targets.length) {
+      alert("No data to export. Please search for a disease first.");
+      return;
+    }
+    setIsExporting(true);
+    try {
+      const response = await fetch('/api/export/notion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targets: researchState.targets,
+          disease: researchState.activeDisease
+        })
+      });
+      const data = await response.json();
+      if (data.success && data.count > 0) {
+        alert(`Successfully exported ${data.count} targets to Notion!`);
+      } else {
+        const errorMsg = data.error || 'Unknown error';
+        const details = data.details ? `\n\nDetails:\n${data.details.join('\n')}` : '';
+        alert(`Export failed: ${errorMsg}${details}`);
+      }
+    } catch (err) {
+      alert(`Export error: ${err}`);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const isBrcaActive = useMemo(() => researchState.activeDisease?.name.toLowerCase().includes('brca') || researchState.activeDisease?.name.toLowerCase().includes('breast'), [researchState.activeDisease]);
   
   const displayTargets = useMemo(() => {
@@ -807,6 +839,16 @@ Behavior Guidelines:
           {researchState.activeDisease && (<div className="px-3 py-1 rounded bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 shadow-sm"><span className={`text-[10px] font-bold uppercase ${theme === 'dark' ? 'text-neutral-500' : 'text-neutral-700'}`}>PROJECT: {researchState.activeDisease.name}</span></div>)}
         </div>
         <div className="flex items-center gap-3">
+          <button 
+            onClick={exportToNotion} 
+            disabled={isExporting || !researchState.targets.length}
+            className={`p-2 rounded flex items-center gap-2 text-[10px] font-bold uppercase transition-all ${isExporting ? 'opacity-50 cursor-not-allowed' : (researchState.targets.length ? 'hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'text-neutral-400 cursor-not-allowed')}`}
+            title="Export prioritized targets to Notion"
+          >
+            {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5" />}
+            <span>{isExporting ? 'Exporting...' : 'Notion'}</span>
+          </button>
+          <div className="w-px h-4 bg-neutral-200 dark:bg-neutral-800 mx-1" />
           <button onClick={() => setTheme(t=>t==='dark'?'light':'dark')} className="p-2 rounded hover:bg-neutral-100 transition-colors">{theme === 'dark' ? <Sun className="w-4 h-4 text-neutral-400" /> : <Moon className="w-4 h-4 text-neutral-600" />}</button>
           <div className="w-px h-4 bg-neutral-200 dark:bg-neutral-800 mx-1" /><button onClick={() => { localStorage.removeItem('pharm_user'); setIsAuthenticated(false); }} className="p-2 rounded hover:text-rose-600 text-neutral-400 transition-colors"><LogOut className="w-4 h-4" /></button>
         </div>

@@ -49,8 +49,8 @@ export const terrainFragmentShader = `
     vec3 col;
     if (renderMode == 1) {
       // Survival Intensity Mode: Red for positive, Blue for negative
-      vec3 blue = vec3(0.0, 0.0, 1.0); // Pure Blue
-      vec3 red = vec3(1.0, 0.0, 0.0);  // Pure Red
+      vec3 blue = vec3(0.26, 0.52, 0.96); // Google Blue
+      vec3 red = vec3(0.92, 0.26, 0.21);  // Google Red
       vec3 neutral = vec3(0.05, 0.05, 0.05); // Dark base for better "amplification" visualization
       if (value > 0.0) {
         col = mix(neutral, red, clamp(value, 0.0, 1.0));
@@ -135,7 +135,7 @@ export const peaksFragmentShader = `
       value += val * gaussian2D(worldPos, pt);
     }
     if (value > 0.0) {
-      gl_FragColor = vec4(1.0, 0.8 * value, 0.0, 0.7);
+      gl_FragColor = vec4(0.92, 0.26, 0.21, 0.7 * value);
     } else {
       discard;
     }
@@ -169,7 +169,7 @@ export const valleyFragmentShader = `
       value += val * gaussian2D(worldPos, pt);
     }
     if (value < 0.0) {
-      gl_FragColor = vec4(0.0, 0.5, 1.0, 0.7 * abs(value));
+      gl_FragColor = vec4(0.26, 0.52, 0.96, 0.7 * abs(value));
     } else {
       discard;
     }
