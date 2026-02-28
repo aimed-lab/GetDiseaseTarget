@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { GoogleGenAI, Type, Chat, GenerateContentResponse } from "@google/genai";
 import * as d3 from "d3";
 import Markdown from 'react-markdown';
+import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, HeadingLevel } from 'docx';
+import { saveAs } from 'file-saver';
 import './index.css';
 import { 
   Activity, 
@@ -25,6 +27,7 @@ import {
   Atom,
   Search,
   Info,
+  ChevronDown,
   Layers,
   BookOpen,
   ExternalLink,
@@ -50,8 +53,7 @@ import {
   ArrowUpDown,
   HelpCircle,
   X,
-  FileDown,
-  ChevronDown
+  FileDown
 } from 'lucide-react';
 
 import { 
@@ -583,6 +585,9 @@ const App = () => {
   const [isChatting, setIsChatting] = useState(false);
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
+  const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
+  const [activeScoreInfo, setActiveScoreInfo] = useState<'genetic' | 'expression' | 'target' | 'overall' | null>(null);
+  const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight; }, [messages]);
   const [isExporting, setIsExporting] = useState(false);
@@ -611,6 +616,68 @@ const App = () => {
         alert(`Export failed: ${errorMsg}${details}`);
       }
     } catch (err) {
+      alert(`Export error: ${err}`);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const exportToDocx = async () => {
+    if (!researchState.targets.length) {
+      alert("No data to export. Please search for a disease first.");
+      return;
+    }
+    setIsExporting(true);
+    try {
+      const diseaseName = researchState.activeDisease?.name || 'Unknown Disease';
+      
+      const doc = new Document({
+        sections: [{
+          properties: {},
+          children: [
+            new Paragraph({
+              text: `Target Prioritization Report: ${diseaseName}`,
+              heading: HeadingLevel.HEADING_1,
+              spacing: { after: 400 },
+            }),
+            new Paragraph({
+              text: `Generated on: ${new Date().toLocaleDateString()}`,
+              spacing: { after: 200 },
+            }),
+            new Table({
+              width: { size: 100, type: WidthType.PERCENTAGE },
+              rows: [
+                new TableRow({
+                  children: [
+                    'Gene', 'Genetic Score', 'Expression', 'Target Score', 'Overall Score'
+                  ].map(text => new TableCell({
+                    children: [new Paragraph({ text, alignment: AlignmentType.CENTER })],
+                    shading: { fill: "E0E0E0" }
+                  })),
+                }),
+                ...researchState.targets.slice(0, 100).map(target => new TableRow({
+                  children: [
+                    target.symbol,
+                    (target.geneticScore || 0).toFixed(3),
+                    (target.combinedExpression || 0).toFixed(3),
+                    (target.targetScore || 0).toFixed(3),
+                    (target.overallScore || 0).toFixed(3)
+                  ].map(text => new TableCell({
+                    children: [new Paragraph({ text, alignment: AlignmentType.CENTER })],
+                  })),
+                })),
+              ],
+            }),
+          ],
+        }],
+      });
+
+      const blob = await Packer.toBlob(doc);
+      saveAs(blob, `Target_Prioritization_${diseaseName.replace(/\s+/g, '_')}.docx`);
+      
+      alert("Document generated and download started.");
+    } catch (err) {
+      console.error("DOCX Export Error:", err);
       alert(`Export error: ${err}`);
     } finally {
       setIsExporting(false);
@@ -970,19 +1037,9 @@ Behavior Guidelines:
       <header className={`px-6 py-3.5 flex items-center justify-between border-b ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-100'}`}>
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2.5"><FlaskConical className="w-5 h-5 text-blue-500" /><h1 className="text-base font-bold tracking-tight">Get<span className="text-blue-500">Gene</span></h1></div>
-          {researchState.activeDisease && (<div className="px-3 py-1 rounded bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 shadow-sm"><span className={`text-[10px] font-bold uppercase ${theme === 'dark' ? 'text-neutral-500' : 'text-neutral-700'}`}>PROJECT: {researchState.activeDisease.name}</span></div>)}
+          {researchState.activeDisease && (<div className="px-3 py-1 rounded bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 shadow-sm"><span className={`text-[10px] font-bold uppercase ${theme === 'dark' ? 'text-neutral-500' : 'text-black'}`}>PROJECT: {researchState.activeDisease.name}</span></div>)}
         </div>
         <div className="flex items-center gap-3">
-          <button 
-            onClick={exportToNotion} 
-            disabled={isExporting || !researchState.targets.length}
-            className={`p-2 rounded flex items-center gap-2 text-[10px] font-bold uppercase transition-all ${isExporting ? 'opacity-50 cursor-not-allowed' : (researchState.targets.length ? 'hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'text-neutral-400 cursor-not-allowed')}`}
-            title="Export prioritized targets to Notion"
-          >
-            {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5" />}
-            <span>{isExporting ? 'Exporting...' : 'Notion'}</span>
-          </button>
-          <div className="w-px h-4 bg-neutral-200 dark:bg-neutral-800 mx-1" />
           <button onClick={() => setTheme(t=>t==='dark'?'light':'dark')} className="p-2 rounded hover:bg-neutral-100 transition-colors">{theme === 'dark' ? <Sun className="w-4 h-4 text-neutral-400" /> : <Moon className="w-4 h-4 text-neutral-600" />}</button>
           <div className="w-px h-4 bg-neutral-200 dark:bg-neutral-800 mx-1" /><button onClick={() => { localStorage.removeItem('pharm_user'); setIsAuthenticated(false); }} className="p-2 rounded hover:text-rose-600 text-neutral-400 transition-colors"><LogOut className="w-4 h-4" /></button>
         </div>
@@ -993,8 +1050,8 @@ Behavior Guidelines:
            <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-5 space-y-6">
               {messages.map((m, i) => (
                 <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
-                  <div className={`max-w-[95%] p-4 rounded-xl text-[14px] shadow-sm ${m.role === 'user' ? 'bg-blue-600 text-white' : (theme === 'dark' ? 'bg-[#171717] border border-neutral-800' : 'bg-neutral-100 text-neutral-900 border border-neutral-200')}`}>
-                    <div className="markdown-body prose prose-sm dark:prose-invert max-w-none">
+                  <div className={`max-w-[95%] p-4 rounded-xl text-[14px] shadow-sm ${m.role === 'user' ? 'bg-blue-600 text-white' : (theme === 'dark' ? 'bg-[#171717] border border-neutral-800 text-neutral-200' : 'bg-white text-black border border-neutral-200 shadow-sm')}`}>
+                    <div className="markdown-body prose prose-sm dark:prose-invert max-w-none text-black dark:text-neutral-200">
                       <Markdown>{m.content}</Markdown>
                     </div>
                     {m.options && (
@@ -1025,7 +1082,7 @@ Behavior Guidelines:
               ))}
               {isChatting && (<div className="flex items-center gap-2 text-blue-600 px-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /><span className="text-[10px] font-bold uppercase tracking-widest">Synthesizing...</span></div>)}
            </div>
-           <form onSubmit={handleChat} className="p-4 border-t border-neutral-100 dark:border-neutral-800"><div className="relative"><input type="text" value={chatInput} onChange={e=>setChatInput(e.target.value)} placeholder="Analyze condition..." className={`w-full p-3 pr-10 text-sm rounded-xl border outline-none ${theme === 'dark' ? 'bg-[#171717] border-neutral-800 text-white placeholder-neutral-600' : 'bg-neutral-50 border-neutral-300 text-neutral-900 shadow-inner'}`} /><button type="submit" className="absolute right-2 top-2 p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"><Send className="w-4 h-4" /></button></div></form>
+           <form onSubmit={handleChat} className="p-4 border-t border-neutral-100 dark:border-neutral-800"><div className="relative"><input type="text" value={chatInput} onChange={e=>setChatInput(e.target.value)} placeholder="Analyze condition..." className={`w-full p-3 pr-10 text-sm rounded-xl border outline-none ${theme === 'dark' ? 'bg-[#171717] border-neutral-800 text-white placeholder-neutral-600' : 'bg-neutral-50 border-neutral-300 text-black shadow-inner'}`} /><button type="submit" className="absolute right-2 top-2 p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"><Send className="w-4 h-4" /></button></div></form>
         </aside>
         {!isLeftSidebarOpen && (<button onClick={() => setIsLeftSidebarOpen(true)} className="absolute left-4 bottom-4 z-20 p-2.5 rounded-full bg-blue-600 text-white shadow-xl hover:scale-110 transition-transform"><MessageSquare className="w-5 h-5" /></button>)}
         <section className="flex-1 flex flex-col p-6 overflow-hidden">
@@ -1044,10 +1101,131 @@ Behavior Guidelines:
                 <>
                   {viewMode === 'list' && (
                     <div className="h-full flex flex-col">
-                      <div className="flex-1 overflow-auto">
+                      <div className="flex items-center justify-between p-4 border-b border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/20">
+                        <h3 className="text-[11px] font-bold uppercase text-black dark:text-neutral-400 tracking-wider">Target Prioritization List</h3>
+                        <div className="relative">
+                          <button 
+                            onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
+                            disabled={isExporting || !researchState.targets.length}
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all shadow-sm ${isExporting || !researchState.targets.length ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                          >
+                            {isExporting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Share2 className="w-3 h-3" />}
+                            Export
+                            <ChevronDown className={`w-3 h-3 transition-transform ${isExportDropdownOpen ? 'rotate-180' : ''}`} />
+                          </button>
+                          {isExportDropdownOpen && (
+                            <div className="absolute right-0 mt-2 w-44 rounded-xl border bg-white dark:bg-[#171717] border-neutral-200 dark:border-neutral-800 shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in duration-200">
+                              <button onClick={() => { exportToNotion(); setIsExportDropdownOpen(false); }} className="w-full px-4 py-3 text-left text-[11px] font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800 flex items-center gap-3 border-b border-neutral-100 dark:border-neutral-800 transition-colors text-neutral-700 dark:text-neutral-300">
+                                <div className="p-1.5 rounded-md bg-neutral-100 dark:bg-neutral-800"><Database className="w-3.5 h-3.5 text-neutral-500" /></div>
+                                <span>Notion</span>
+                              </button>
+                              <button onClick={() => { exportToDocx(); setIsExportDropdownOpen(false); }} className="w-full px-4 py-3 text-left text-[11px] font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800 flex items-center gap-3 transition-colors text-neutral-700 dark:text-neutral-300">
+                                <div className="p-1.5 rounded-md bg-blue-50 dark:bg-blue-900/20"><FileDown className="w-3.5 h-3.5 text-blue-500" /></div>
+                                <span>Download DOCX</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex-1 overflow-auto relative">
                         <table className="w-full text-left border-collapse">
                           <thead className={`sticky top-0 z-10 text-[10px] font-bold uppercase tracking-widest border-b ${theme === 'dark' ? 'bg-[#171717] border-neutral-800 text-neutral-500' : 'bg-neutral-50 border-neutral-200 text-neutral-900 shadow-sm'}`}>
-                            <tr><th className="p-4 pl-8">Gene</th><th className="p-4 hidden md:table-cell">Gene Name</th><th className="p-4 text-center">Genetic</th><th className="p-4 text-center">Expression</th><th className="p-4 text-center">Target</th><th className="p-4 pr-8 text-right">Overall Score</th></tr>
+                            <tr>
+                              <th className="p-4 pl-8">Gene</th>
+                              <th className="p-4 hidden md:table-cell">Gene Name</th>
+                              <th className="p-4 text-center relative">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  Genetic
+                                  <button 
+                                    onMouseEnter={() => setActiveTooltip('genetic')} 
+                                    onMouseLeave={() => setActiveTooltip(null)}
+                                    onClick={() => setActiveScoreInfo('genetic')}
+                                    className="p-0.5 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-colors"
+                                  >
+                                    <Info className="w-3 h-3 text-neutral-400" />
+                                  </button>
+                                </div>
+                                {activeTooltip === 'genetic' && (
+                                  <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 p-4 rounded-xl border bg-white dark:bg-[#1c1c1c] border-neutral-200 dark:border-neutral-800 shadow-2xl z-50 text-left normal-case tracking-normal animate-in fade-in slide-in-from-top-2 duration-200">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <div className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/20"><Info className="w-3.5 h-3.5 text-blue-500" /></div>
+                                      <h5 className="text-[12px] font-bold text-black dark:text-white">Genetic Score</h5>
+                                    </div>
+                                    <p className="text-[11px] text-black dark:text-neutral-400 leading-relaxed mb-3">Aggregated genetic evidence linking the gene to the selected disease. Range: 0–1. Higher indicates stronger genetic support.</p>
+                                    <button onClick={() => setActiveScoreInfo('genetic')} className="text-[10px] font-bold text-blue-600 hover:underline flex items-center gap-1">Learn more <ChevronRight className="w-3 h-3" /></button>
+                                  </div>
+                                )}
+                              </th>
+                              <th className="p-4 text-center relative">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  Expression
+                                  <button 
+                                    onMouseEnter={() => setActiveTooltip('expression')} 
+                                    onMouseLeave={() => setActiveTooltip(null)}
+                                    onClick={() => setActiveScoreInfo('expression')}
+                                    className="p-0.5 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-colors"
+                                  >
+                                    <Info className="w-3 h-3 text-neutral-400" />
+                                  </button>
+                                </div>
+                                {activeTooltip === 'expression' && (
+                                  <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 p-4 rounded-xl border bg-white dark:bg-[#1c1c1c] border-neutral-200 dark:border-neutral-800 shadow-2xl z-50 text-left normal-case tracking-normal animate-in fade-in slide-in-from-top-2 duration-200">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <div className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20"><Info className="w-3.5 h-3.5 text-emerald-500" /></div>
+                                      <h5 className="text-[12px] font-bold text-black dark:text-white">Expression Score</h5>
+                                    </div>
+                                    <p className="text-[11px] text-black dark:text-neutral-400 leading-relaxed mb-3">Aggregated RNA expression evidence supporting gene–disease association. Range: 0–1.</p>
+                                    <button onClick={() => setActiveScoreInfo('expression')} className="text-[10px] font-bold text-emerald-600 hover:underline flex items-center gap-1">Learn more <ChevronRight className="w-3 h-3" /></button>
+                                  </div>
+                                )}
+                              </th>
+                              <th className="p-4 text-center relative">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  Target
+                                  <button 
+                                    onMouseEnter={() => setActiveTooltip('target')} 
+                                    onMouseLeave={() => setActiveTooltip(null)}
+                                    onClick={() => setActiveScoreInfo('target')}
+                                    className="p-0.5 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-colors"
+                                  >
+                                    <Info className="w-3 h-3 text-neutral-400" />
+                                  </button>
+                                </div>
+                                {activeTooltip === 'target' && (
+                                  <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 p-4 rounded-xl border bg-white dark:bg-[#1c1c1c] border-neutral-200 dark:border-neutral-800 shadow-2xl z-50 text-left normal-case tracking-normal animate-in fade-in slide-in-from-top-2 duration-200">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <div className="p-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/20"><Pill className="w-3.5 h-3.5 text-amber-500" /></div>
+                                      <h5 className="text-[12px] font-bold text-black dark:text-white">Drug / Target Score</h5>
+                                    </div>
+                                    <p className="text-[11px] text-black dark:text-neutral-400 leading-relaxed mb-3">Evidence from known drug–target relationships. Range: 0–1.</p>
+                                    <button onClick={() => setActiveScoreInfo('target')} className="text-[10px] font-bold text-amber-600 hover:underline flex items-center gap-1">Learn more <ChevronRight className="w-3 h-3" /></button>
+                                  </div>
+                                )}
+                              </th>
+                              <th className="p-4 pr-8 text-right relative">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  Overall Score
+                                  <button 
+                                    onMouseEnter={() => setActiveTooltip('overall')} 
+                                    onMouseLeave={() => setActiveTooltip(null)}
+                                    onClick={() => setActiveScoreInfo('overall')}
+                                    className="p-0.5 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-colors"
+                                  >
+                                    <Info className="w-3 h-3 text-neutral-400" />
+                                  </button>
+                                </div>
+                                {activeTooltip === 'overall' && (
+                                  <div className="absolute top-full right-0 mt-2 w-64 p-4 rounded-xl border bg-white dark:bg-[#1c1c1c] border-neutral-200 dark:border-neutral-800 shadow-2xl z-50 text-left normal-case tracking-normal animate-in fade-in slide-in-from-top-2 duration-200">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <div className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/20"><Atom className="w-3.5 h-3.5 text-blue-500" /></div>
+                                      <h5 className="text-[12px] font-bold text-black dark:text-white">Overall Score</h5>
+                                    </div>
+                                    <p className="text-[11px] text-black dark:text-neutral-400 leading-relaxed mb-3">Harmonized prioritization score integrating genetic, expression, and targetability metrics.</p>
+                                    <button onClick={() => setActiveScoreInfo('overall')} className="text-[10px] font-bold text-blue-600 hover:underline flex items-center gap-1">Learn more <ChevronRight className="w-3 h-3" /></button>
+                                  </div>
+                                )}
+                              </th>
+                            </tr>
                           </thead>
                           <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
                             {displayTargets.map(t => (
@@ -1172,6 +1350,148 @@ Behavior Guidelines:
           )}
         </>)}
       </main>
+
+      {/* Score Information Drawer */}
+      <div className={`fixed inset-y-0 right-0 w-96 bg-white dark:bg-[#0d0d0d] border-l border-neutral-200 dark:border-neutral-800 shadow-2xl z-[100] transition-transform duration-300 ease-in-out transform ${activeScoreInfo ? 'translate-x-0' : 'translate-x-full'}`}>
+        <div className="h-full flex flex-col">
+          <div className="p-6 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-blue-50 dark:bg-blue-900/20"><Info className="w-5 h-5 text-blue-600" /></div>
+              <h2 className="text-lg font-bold tracking-tight text-black dark:text-white">Score Information</h2>
+            </div>
+            <button onClick={() => setActiveScoreInfo(null)} className="p-2 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"><X className="w-5 h-5 text-neutral-400" /></button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-8 space-y-10">
+            {activeScoreInfo === 'genetic' && (
+              <section className="space-y-4">
+                <h3 className="text-[11px] font-bold uppercase text-blue-600 tracking-widest">Genetic Score</h3>
+                <div className="space-y-6">
+                  <div>
+                    <h4 className="text-[12px] font-bold mb-2 text-black dark:text-neutral-200 uppercase tracking-tighter">Description</h4>
+                    <p className="text-[13px] text-neutral-900 dark:text-neutral-400 leading-relaxed">The Genetic Score represents aggregated genetic association evidence supporting a link between the gene and the selected disease.</p>
+                  </div>
+                  <div>
+                    <h4 className="text-[12px] font-bold mb-2 text-black dark:text-neutral-200 uppercase tracking-tighter">Integrated Datasets</h4>
+                    <ul className="list-disc list-inside text-[13px] text-neutral-900 dark:text-neutral-400 space-y-1">
+                      <li>Genome-wide association studies (GWAS)</li>
+                      <li>Rare variant evidence</li>
+                      <li>ClinVar annotations</li>
+                      <li>Gene–phenotype databases</li>
+                      <li>Open Targets Genetics portal data</li>
+                    </ul>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-100 dark:border-neutral-800">
+                      <div className="text-[10px] font-bold text-neutral-400 uppercase mb-1">Range</div>
+                      <div className="text-lg font-bold text-blue-600">0.0 — 1.0</div>
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="text-[12px] font-bold mb-2 text-black dark:text-neutral-200 uppercase tracking-tighter">Interpretation</h4>
+                    <p className="text-[13px] text-neutral-900 dark:text-neutral-400 leading-relaxed">Higher score indicates stronger genetic evidence supporting disease association.</p>
+                  </div>
+                  <div>
+                    <h4 className="text-[12px] font-bold mb-2 text-black dark:text-neutral-200 uppercase tracking-tighter">Source</h4>
+                    <p className="text-[13px] text-neutral-900 dark:text-neutral-400 leading-relaxed mb-4">Open Targets Platform</p>
+                    <a href="https://platform-docs.opentargets.org/associations#interpreting-association-scores" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-[11px] font-bold uppercase hover:bg-blue-700 transition-all shadow-md">Learn more on Open Targets <ExternalLink className="w-3.5 h-3.5" /></a>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {activeScoreInfo === 'expression' && (
+              <section className="space-y-4">
+                <h3 className="text-[11px] font-bold uppercase text-emerald-600 tracking-widest">Expression Score</h3>
+                <div className="space-y-6">
+                  <div>
+                    <h4 className="text-[12px] font-bold mb-2 text-black dark:text-neutral-200 uppercase tracking-tighter">Description</h4>
+                    <p className="text-[13px] text-neutral-900 dark:text-neutral-400 leading-relaxed">The Expression Score represents aggregated RNA expression evidence linking the gene to the selected disease.</p>
+                  </div>
+                  <div>
+                    <h4 className="text-[12px] font-bold mb-2 text-neutral-800 dark:text-neutral-200 uppercase tracking-tighter">Derived From</h4>
+                    <ul className="list-disc list-inside text-[13px] text-neutral-600 dark:text-neutral-400 space-y-1">
+                      <li>Expression Atlas</li>
+                      <li>Differential expression studies</li>
+                      <li>Transcriptomic datasets</li>
+                    </ul>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-100 dark:border-neutral-800">
+                      <div className="text-[10px] font-bold text-neutral-400 uppercase mb-1">Range</div>
+                      <div className="text-lg font-bold text-emerald-600">0.0 — 1.0</div>
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="text-[12px] font-bold mb-2 text-black dark:text-neutral-200 uppercase tracking-tighter">Interpretation</h4>
+                    <p className="text-[13px] text-neutral-900 dark:text-neutral-400 leading-relaxed">Higher score indicates stronger expression-based evidence supporting disease relevance.</p>
+                  </div>
+                  <div>
+                    <a href="https://platform-docs.opentargets.org/associations#interpreting-association-scores" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-[11px] font-bold uppercase hover:bg-emerald-700 transition-all shadow-md">Learn more on Open Targets <ExternalLink className="w-3.5 h-3.5" /></a>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {activeScoreInfo === 'target' && (
+              <section className="space-y-4">
+                <h3 className="text-[11px] font-bold uppercase text-amber-600 tracking-widest">Drug / Target Score</h3>
+                <div className="space-y-6">
+                  <div>
+                    <h4 className="text-[12px] font-bold mb-2 text-black dark:text-neutral-200 uppercase tracking-tighter">Description</h4>
+                    <p className="text-[13px] text-neutral-900 dark:text-neutral-400 leading-relaxed">The Drug Score represents evidence from pharmacological data linking the gene to therapeutic interventions or drug development activity.</p>
+                  </div>
+                  <div>
+                    <h4 className="text-[12px] font-bold mb-2 text-neutral-800 dark:text-neutral-200 uppercase tracking-tighter">Derived From</h4>
+                    <ul className="list-disc list-inside text-[13px] text-neutral-600 dark:text-neutral-400 space-y-1">
+                      <li>ChEMBL</li>
+                      <li>Drug–target relationship databases</li>
+                      <li>Clinical pharmacology evidence</li>
+                    </ul>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-100 dark:border-neutral-800">
+                      <div className="text-[10px] font-bold text-neutral-400 uppercase mb-1">Range</div>
+                      <div className="text-lg font-bold text-amber-600">0.0 — 1.0</div>
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="text-[12px] font-bold mb-2 text-black dark:text-neutral-200 uppercase tracking-tighter">Interpretation</h4>
+                    <p className="text-[13px] text-neutral-900 dark:text-neutral-400 leading-relaxed">Higher score indicates stronger drug-targeting evidence.</p>
+                  </div>
+                  <div>
+                    <a href="https://platform-docs.opentargets.org/associations#interpreting-association-scores" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-[11px] font-bold uppercase hover:bg-amber-700 transition-all shadow-md">Learn more on Open Targets <ExternalLink className="w-3.5 h-3.5" /></a>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {activeScoreInfo === 'overall' && (
+              <section className="space-y-4">
+                <h3 className="text-[11px] font-bold uppercase text-blue-600 tracking-widest">Overall Score</h3>
+                <div className="space-y-6">
+                  <div>
+                    <h4 className="text-[12px] font-bold mb-2 text-black dark:text-neutral-200 uppercase tracking-tighter">Description</h4>
+                    <p className="text-[13px] text-neutral-900 dark:text-neutral-400 leading-relaxed">The Overall Score is a harmonized prioritization metric that integrates genetic, expression, and targetability data to rank targets by their therapeutic potential.</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-100 dark:border-neutral-800">
+                      <div className="text-[10px] font-bold text-neutral-400 uppercase mb-1">Range</div>
+                      <div className="text-lg font-bold text-blue-600">0.0 — 1.0</div>
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="text-[12px] font-bold mb-2 text-black dark:text-neutral-200 uppercase tracking-tighter">Interpretation</h4>
+                    <p className="text-[13px] text-neutral-900 dark:text-neutral-400 leading-relaxed">Higher score indicates a more promising therapeutic target across multiple evidence dimensions.</p>
+                  </div>
+                  <div>
+                    <a href="https://platform-docs.opentargets.org/associations#interpreting-association-scores" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-[11px] font-bold uppercase hover:bg-blue-700 transition-all shadow-md">Learn more on Open Targets <ExternalLink className="w-3.5 h-3.5" /></a>
+                  </div>
+                </div>
+              </section>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
