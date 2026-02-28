@@ -51,21 +51,30 @@ export const terrainFragmentShader = `
       // Survival Intensity Mode: Red for positive, Blue for negative
       vec3 blue = vec3(0.26, 0.52, 0.96); // Google Blue
       vec3 red = vec3(0.92, 0.26, 0.21);  // Google Red
-      vec3 neutral = vec3(0.05, 0.05, 0.05); // Dark base for better "amplification" visualization
+      vec3 paleBlue = vec3(0.96, 0.988, 1.0); // Pale Blue (#F5FCFF)
+      vec3 paleRed = vec3(1.0, 0.96, 0.96);   // Light Red for fade
+      
+      float v = abs(value);
+      float saturation = clamp(v * 12.0, 0.0, 1.0);
+      
       if (value > 0.0) {
-        col = mix(neutral, red, clamp(value, 0.0, 1.0));
+        col = mix(paleRed, red, saturation);
       } else if (value < 0.0) {
-        col = mix(neutral, blue, clamp(-value, 0.0, 1.0));
+        col = mix(paleBlue, blue, saturation);
       } else {
-        col = neutral;
+        col = vec3(1.0);
       }
+      
+      float opacity = clamp(v * 15.0, 0.0, 1.0);
+      gl_FragColor = vec4(col, mix(0.0, 0.95, opacity));
+      return;
     } else {
       // Default - Spectral
       col = spectral(value);
     }
     
     float intensity = clamp(abs(value) * 3.0, 0.0, 1.0);
-    gl_FragColor = vec4(col, 0.75 * intensity + (renderMode == 1 ? 0.02 : 0.1));
+    gl_FragColor = vec4(col, 0.75 * intensity + 0.1);
   }
 `;
 
@@ -135,7 +144,9 @@ export const peaksFragmentShader = `
       value += val * gaussian2D(worldPos, pt);
     }
     if (value > 0.0) {
-      gl_FragColor = vec4(0.92, 0.26, 0.21, 0.7 * value);
+      vec3 red = vec3(0.92, 0.26, 0.21);
+      float opacity = clamp(value * 15.0, 0.0, 1.0);
+      gl_FragColor = vec4(red, mix(0.0, 0.95, opacity));
     } else {
       discard;
     }
@@ -169,7 +180,13 @@ export const valleyFragmentShader = `
       value += val * gaussian2D(worldPos, pt);
     }
     if (value < 0.0) {
-      gl_FragColor = vec4(0.26, 0.52, 0.96, 0.7 * abs(value));
+      vec3 blue = vec3(0.26, 0.52, 0.96);
+      vec3 paleBlue = vec3(0.96, 0.988, 1.0);
+      float v = abs(value);
+      float saturation = clamp(v * 12.0, 0.0, 1.0);
+      vec3 col = mix(paleBlue, blue, saturation);
+      float opacity = clamp(v * 15.0, 0.0, 1.0);
+      gl_FragColor = vec4(col, mix(0.0, 0.95, opacity));
     } else {
       discard;
     }

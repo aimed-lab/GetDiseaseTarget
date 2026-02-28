@@ -204,11 +204,31 @@ export const api = {
     } catch (e) { return []; }
   },
 
-  async getSurvivalMeans(): Promise<any[]> {
+  async getTcgaClinical(cancerType: string): Promise<any[]> {
     try {
-      const res = await fetch('https://aimed.uab.edu/apex/gtkb/brcatest/survival-means?limit=30');
+      const res = await fetch(`https://aimed.uab.edu/apex/gtkb/clinical_data/pancan/${cancerType.toLowerCase()}`);
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
       const data = await res.json();
-      return data.items || [];
-    } catch (e) { return []; }
+      return data.items || data.rows || (Array.isArray(data) ? data : []);
+    } catch (e) { 
+      console.error("getTcgaClinical failed:", e);
+      return []; 
+    }
+  },
+
+  async getTcgaExpressionPage(cancerType: string, genes: string[], offset: number): Promise<{ items: any[], hasMore: boolean }> {
+    try {
+      const genesParam = genes.join(',');
+      const res = await fetch(`https://aimed.uab.edu/apex/gtkb/gene_exp/${cancerType.toLowerCase()}?genes=${genesParam}&offset=${offset}&row_limit=10000`);
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      const data = await res.json();
+      return {
+        items: data.items || data.rows || (Array.isArray(data) ? data : []),
+        hasMore: data.hasMore || false
+      };
+    } catch (e) { 
+      console.error("getTcgaExpressionPage failed:", e);
+      return { items: [], hasMore: false }; 
+    }
   }
 };

@@ -84,6 +84,25 @@ import { api } from './api';
 const HARDCODED_PASSWORD = "Sparc@2026";
 const MAX_WebGL_POINTS = 1024;
 
+const DEMO_PATIENTS = [
+  { id: 'P1', race: 'WHITE', stage: 'Stage I', os_time: 1200 },
+  { id: 'P2', race: 'WHITE', stage: 'Stage II', os_time: 800 },
+  { id: 'P3', race: 'BLACK', stage: 'Stage I', os_time: 1100 },
+  { id: 'P4', race: 'BLACK', stage: 'Stage III', os_time: 600 },
+  { id: 'P5', race: 'ASIAN', stage: 'Stage II', os_time: 950 },
+  { id: 'P6', race: 'OTHER', stage: 'Stage IV', os_time: 400 },
+];
+
+const getDemoExpression = (symbol: string, patientId: string) => {
+  let hash = 0;
+  const str = symbol + patientId;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return (Math.abs(hash % 100) / 100);
+};
+
 // --- Helper Components for Visualization ---
 
 const RadarChart = ({ target, theme }: { target: Target, theme: Theme }) => {
@@ -613,38 +632,153 @@ const App = () => {
     if (!isBrcaActive || researchState.targets.length === 0) return;
     setResearchState(p => ({ ...p, isAnalyzingSurvival: true }));
     try {
-      const allMeans = await api.getSurvivalMeans();
-      const metrics: SurvivalMetrics = {};
-      const targets = researchState.targets;
+      // Step 1: Fetch and Process Clinical Data
+      const clinicalRows = await api.getTcgaClinical('brca');
+      
+      const processedClinical = clinicalRows
+        .map(row => {
+          // Extremely robust field mapping for clinical data
+          const sid = row.SAMPLEID ?? row.sampleid ?? row.SampleID ?? row.sample_id ?? row.Sample_ID ?? row.sample ?? row.PATIENT_ID ?? row.patient_id;
+          const os = row.OS_TIME ?? row.os_time ?? row.OsTime ?? row.os_days ?? row.days_to_last_followup ?? row.days_to_death ?? row.os ?? row.SURVIVAL_TIME ?? row.survival_time;
+          return {
+            sampleid: sid,
+            os_time: parseFloat(os)
+          };
+        })
+        .filter(row => row.sampleid && !isNaN(row.os_time));
 
-      targets.forEach(t => {
-        const symbol = t.symbol;
-        const apiData = allMeans.find((item: any) => item.gene === symbol);
+      if (processedClinical.length === 0) {
+        console.warn("No valid clinical records found for survival analysis. Sample row:", clinicalRows[0]);
+        setResearchState(p => ({ ...p, survivalMetrics: {}, medianOs: 0 }));
+        return;
+      }
+
+      // Compute median of os_time
+      const sortedOs = [...processedClinical].map(p => p.os_time).sort((a, b) => a - b);
+      let median: number;
+      const mid = Math.floor(sortedOs.length / 2);
+      if (sortedOs.length % 2 === 0) {
+        median = (sortedOs[mid - 1] + sortedOs[mid]) / 2;
+      } else {
+        median = sortedOs[mid];
+      }
+
+      // Assign survival group
+      const groupMap: Record<string, 'HIGH' | 'LOW'> = {};
+      processedClinical.forEach(p => {
+        if (p.sampleid) {
+          groupMap[p.sampleid.toString().toUpperCase()] = p.os_time > median ? 'HIGH' : 'LOW';
+        }
+      });
+
+      // Step 2: Fetch Expression Data in Batches
+      const geneSymbols = Array.from(new Set(
+        researchState.targets
+          .map(t => t.symbol?.toString().trim().toUpperCase())
+          .filter(Boolean) as string[]
+      ));
+      
+      const sumHigh: Record<string, number> = {};
+      const countHigh: Record<string, number> = {};
+      const sumLow: Record<string, number> = {};
+      const countLow: Record<string, number> = {};
+
+      // Initialize counters
+      geneSymbols.forEach(s => {
+        sumHigh[s] = 0; countHigh[s] = 0;
+        sumLow[s] = 0; countLow[s] = 0;
+      });
+
+      // Split into batches of 10 genes for better reliability
+      for (let i = 0; i < geneSymbols.length; i += 10) {
+        const batch = geneSymbols.slice(i, i + 10);
+        let offset = 0;
+        let hasMore = true;
+
+        while (hasMore) {
+          const page = await api.getTcgaExpressionPage('brca', batch, offset);
+          if (!page.items || page.items.length === 0) break;
+
+          page.items.forEach(item => {
+            const sid = (item.SAMPLEID ?? item.sampleid ?? item.SampleID ?? item.sample_id ?? item.Sample_ID ?? item.sample ?? item.PATIENT_ID ?? item.patient_id)?.toString().trim().toUpperCase();
+            const gene = (item.GENE_SYMBOL ?? item.gene_symbol ?? item.GeneSymbol ?? item.symbol ?? item.Symbol ?? item.gene)?.toString().trim().toUpperCase();
+            const rawVal = item.EXPRESSION_VALUE ?? item.value ?? item.expression_value ?? item.ExpressionValue ?? item.tpm ?? item.TPM ?? item.exp;
+            const val = Number(rawVal);
+            
+            if (sid && gene && groupMap[sid] && !isNaN(val)) {
+              // We check if the gene is in our initialization list to avoid NaN
+              if (countHigh[gene] !== undefined) {
+                if (groupMap[sid] === 'HIGH') {
+                  sumHigh[gene] += val;
+                  countHigh[gene]++;
+                } else {
+                  sumLow[gene] += val;
+                  countLow[gene]++;
+                }
+              }
+            }
+          });
+          offset += 10000;
+          hasMore = page.hasMore;
+          if (offset > 1000000) break; 
+        }
+      }
+
+      console.log('Example counts TP53:', countHigh['TP53'], countLow['TP53']);
+      console.log('Example means TP53:', sumHigh['TP53']/countHigh['TP53'], sumLow['TP53']/countLow['TP53']);
+
+      // Step 3: Compute Final Metrics
+      const metrics: SurvivalMetrics = {};
+      const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
+      const maxAbs = 2; 
+      const norm = (x: number) => clamp(x / maxAbs, -1, 1);
+      const threshold = 0.05;
+      const status = (v: number): 'up' | 'down' | 'neutral' =>
+        v > threshold ? 'up' : v < -threshold ? 'down' : 'neutral';
+
+      researchState.targets.forEach(t => {
+        const s = t.symbol?.toString().trim().toUpperCase();
+        if (!s) return;
         
-        metrics[symbol] = { 
-          meanHigh: apiData ? apiData.mean_high : 0, 
-          meanLow: apiData ? apiData.mean_low : 0, 
-          nHigh: 1098, // TCGA cohort approx
-          nLow: 1098,
-          nUsedHigh: apiData ? 1 : 0,
-          nUsedLow: apiData ? 1 : 0,
-          log1pHigh: 0, log1pLow: 0, highDiff: 0, lowDiff: 0, highStatus: 'neutral', lowStatus: 'neutral' 
+        const mHigh = countHigh[s] > 0 ? sumHigh[s] / countHigh[s] : 0;
+        const mLow = countLow[s] > 0 ? sumLow[s] / countLow[s] : 0;
+        
+        // Normalize for terrain visualization
+        const normHigh = norm(mHigh);
+        const normLow = norm(mLow);
+
+        metrics[t.symbol] = {
+          meanHigh: normHigh,
+          meanLow: normLow,
+          highDiff: normHigh,
+          lowDiff: normLow,
+          highStatus: status(normHigh),
+          lowStatus: status(normLow),
+          nHigh: countHigh[s],
+          nLow: countLow[s],
+          nUsedHigh: countHigh[s],
+          nUsedLow: countLow[s],
+          log1pHigh: 0,
+          log1pLow: 0
         };
       });
 
-      Object.keys(metrics).forEach(symbol => {
-        const m = metrics[symbol];
-        m.highDiff = m.meanHigh;
-        m.lowDiff = m.meanLow;
-        m.highStatus = m.highDiff > 0 ? 'up' : (m.highDiff < 0 ? 'down' : 'neutral');
-        m.lowStatus = m.lowDiff > 0 ? 'up' : (m.lowDiff < 0 ? 'down' : 'neutral');
+      setResearchState(p => {
+        const sortedTargets = [...p.targets].sort((a, b) => {
+          const metA = metrics[a.symbol];
+          const metB = metrics[b.symbol];
+          if (!metA || !metB) return 0;
+          const deltaA = Math.abs(metA.meanHigh - metA.meanLow);
+          const deltaB = Math.abs(metB.meanHigh - metB.meanLow);
+          return deltaB - deltaA;
+        });
+        return { 
+          ...p, 
+          targets: sortedTargets,
+          survivalMetrics: metrics, 
+          medianOs: median
+        };
       });
-
-      setResearchState(p => ({ 
-        ...p, 
-        survivalMetrics: metrics, 
-        medianOs: 912 // Fixed median as per backend calculation
-      }));
     } catch (e) {
       console.error("Survival analysis failed:", e);
     } finally {
@@ -951,7 +1085,54 @@ Behavior Guidelines:
                   {viewMode === 'enrichment' && (<div className="p-10 h-full overflow-auto space-y-6"><div className={`flex items-center justify-between border-b pb-4 ${theme === 'dark' ? 'border-neutral-800' : 'border-neutral-200'}`}><h4 className="text-[13px] font-bold uppercase text-neutral-700 dark:text-neutral-400 tracking-wider">Molecular Pathway Analytics</h4></div><div className="grid grid-cols-1 gap-4">{researchState.enrichment.map((e, i) => { const nCoCo = Math.min(0.95, (Math.log10(e.combinedScore + 1) / 3)); return (<div key={i} className={`p-6 rounded-2xl border shadow-sm transition-hover hover:shadow-md ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200'}`}><div className="flex flex-col lg:flex-row justify-between gap-6"><div className="space-y-4 flex-1"><div className="flex items-center gap-3"><span className={`text-[15px] font-bold tracking-tight ${theme === 'dark' ? 'text-neutral-100' : 'text-neutral-900'}`}>{e.term}</span></div><div className="flex flex-wrap gap-2">{e.genes.slice(0, 15).map(g => (<span key={g} className={`px-2.5 py-1 rounded-md text-[10px] font-bold border transition-colors ${theme === 'dark' ? 'bg-neutral-800 text-neutral-400 border-neutral-700 hover:text-blue-400' : 'bg-blue-50 text-blue-700 border-blue-100 hover:bg-blue-100'}`}>{g}</span>))}</div></div><div className="flex items-center gap-12 shrink-0"><div className="text-right"><div className="text-[10px] font-bold uppercase mb-1 text-neutral-500 tracking-wider">p-Value</div><div className="text-sm font-mono font-bold text-blue-600">{e.pValue.toExponential(3)}</div></div><div className="w-40 space-y-3"><div className="flex justify-between items-end"><span className="text-[10px] font-bold uppercase text-neutral-500 tracking-wider">Enrichment Score</span><span className="text-[11px] font-bold font-mono text-blue-600">{nCoCo.toFixed(3)}</span></div><div className={`h-2 rounded-full overflow-hidden ${theme === 'dark' ? 'bg-neutral-800' : 'bg-neutral-100 shadow-inner'}`}><div className="h-full bg-blue-600 shadow-[0_0_8px_rgba(37,99,235,0.4)]" style={{width: `${nCoCo*100}%`}} /></div></div></div></div></div>); })}</div></div>)}
                   {viewMode === 'graph' && <KnowledgeGraph targets={researchState.targets} selectedId={researchState.focusSymbol || undefined} onSelect={(t)=>setResearchState(p=>({...p, focusSymbol: t?.symbol || null}))} theme={theme} />}
                   {viewMode === 'terrain' && <GeneTerrain targets={researchState.targets} selectedId={researchState.targets.find(t=>t.symbol===researchState.focusSymbol)?.id} onSelect={(t)=>setResearchState(p=>({...p, focusSymbol: t?.symbol || null}))} theme={theme} />}
-                  {viewMode === 'survival' && <GeneTerrain targets={researchState.targets} selectedId={researchState.targets.find(t=>t.symbol===researchState.focusSymbol)?.id} onSelect={(t)=>setResearchState(p=>({...p, focusSymbol: t?.symbol || null}))} theme={theme} mode="survival" survivalMetrics={researchState.survivalMetrics} medianOs={researchState.medianOs} />}
+                  {viewMode === 'survival' && (
+                    <div className="h-full flex divide-x divide-neutral-100 dark:divide-neutral-800">
+                      <div className="flex-1 relative">
+                        <GeneTerrain targets={researchState.targets} selectedId={researchState.targets.find(t=>t.symbol===researchState.focusSymbol)?.id} onSelect={(t)=>setResearchState(p=>({...p, focusSymbol: t?.symbol || null}))} theme={theme} mode="survival" survivalMetrics={researchState.survivalMetrics} medianOs={researchState.medianOs} />
+                      </div>
+                      <div className={`w-80 flex flex-col overflow-hidden ${theme === 'dark' ? 'bg-[#0d0d0d]' : 'bg-white'}`}>
+                        <div className="p-4 border-b border-neutral-100 dark:border-neutral-800 flex items-center gap-2">
+                          <TableProperties className="w-4 h-4 text-neutral-500" />
+                          <span className="text-[11px] font-bold uppercase text-neutral-600 dark:text-neutral-400 tracking-wider">Cohort Comparison</span>
+                        </div>
+                        <div className="flex-1 overflow-auto">
+                          {researchState.isAnalyzingSurvival ? (
+                            <div className="h-full flex flex-col items-center justify-center p-8 text-center">
+                              <Loader2 className="w-6 h-6 animate-spin text-blue-500 mb-3" />
+                              <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Analyzing Cohort Expression...</p>
+                              <p className="text-[9px] text-neutral-400 mt-1 italic">Processing TCGA clinical & genomic batches</p>
+                            </div>
+                          ) : (
+                            <table className="w-full text-left">
+                              <thead className={`sticky top-0 z-10 text-[9px] font-bold uppercase tracking-widest border-b ${theme === 'dark' ? 'bg-[#171717] border-neutral-800 text-neutral-500' : 'bg-neutral-50 border-neutral-200 text-neutral-700'}`}>
+                                <tr>
+                                  <th className="p-3 pl-4">Gene</th>
+                                  <th className="p-3 text-right">High Mean</th>
+                                  <th className="p-3 text-right pr-4">Low Mean</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-neutral-50 dark:divide-neutral-800">
+                                {researchState.targets.map(t => {
+                                  const m = researchState.survivalMetrics?.[t.symbol];
+                                  return (
+                                    <tr key={t.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors">
+                                      <td className="p-3 pl-4 font-bold text-blue-600 dark:text-blue-500 text-[11px]">{t.symbol}</td>
+                                      <td className="p-3 text-right font-mono text-[10px] text-neutral-600 dark:text-neutral-400">
+                                        {m ? m.meanHigh.toFixed(4) : '—'}
+                                      </td>
+                                      <td className="p-3 text-right font-mono text-[10px] text-neutral-600 dark:text-neutral-400 pr-4">
+                                        {m ? m.meanLow.toFixed(4) : '—'}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   {viewMode === 'raw' && <RawDataView targets={researchState.targets} theme={theme} />}
                 </>
               )}
