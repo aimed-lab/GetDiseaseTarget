@@ -85,36 +85,41 @@ export const api = {
       });
       const data = await res.json();
       const rows = data.data?.disease?.associatedTargets?.rows || [];
-      
-      return rows.map((r: any) => {
-        const geneticScore = r.datatypeScores.find((s:any) => s.id.includes('genetic'))?.score || 0;
-        const expressionScore = r.datatypeScores.find((s:any) => s.id.includes('rna'))?.score || 0;
-        const targetScore = r.datatypeScores.find((s:any) => s.id.includes('drug'))?.score || 0;
+      const seen = new Set();
+      const uniqueTargets: Target[] = [];
+      for (const r of rows) {
+        if (!seen.has(r.target.id)) {
+          seen.add(r.target.id);
+          const geneticScore = r.datatypeScores.find((s:any) => s.id.includes('genetic'))?.score || 0;
+          const expressionScore = r.datatypeScores.find((s:any) => s.id.includes('rna'))?.score || 0;
+          const targetScore = r.datatypeScores.find((s:any) => s.id.includes('drug'))?.score || 0;
 
-        const expressions = r.target.expressions || [];
-        const brainTissues = ['brain', 'cortex', 'hippocampus', 'cerebellum'];
-        const relevant = expressions.filter((e: any) => 
-          brainTissues.some(bt => e.tissue.label.toLowerCase().includes(bt))
-        );
-        let baselineValue = 0;
-        if (relevant.length > 0) {
-          const avgTPM = relevant.reduce((acc: number, curr: any) => acc + (curr.rna?.value || 0), 0) / relevant.length;
-          baselineValue = Math.min(1, Math.log10(avgTPM + 1) / 2);
+          const expressions = r.target.expressions || [];
+          const brainTissues = ['brain', 'cortex', 'hippocampus', 'cerebellum'];
+          const relevant = expressions.filter((e: any) => 
+            brainTissues.some(bt => e.tissue.label.toLowerCase().includes(bt))
+          );
+          let baselineValue = 0;
+          if (relevant.length > 0) {
+            const avgTPM = relevant.reduce((acc: number, curr: any) => acc + (curr.rna?.value || 0), 0) / relevant.length;
+            baselineValue = Math.min(1, Math.log10(avgTPM + 1) / 2);
+          }
+
+          uniqueTargets.push({
+            id: r.target.id,
+            symbol: r.target.approvedSymbol,
+            name: r.target.approvedName,
+            overallScore: r.score,
+            geneticScore,
+            expressionScore,
+            baselineExpression: baselineValue,
+            combinedExpression: Math.max(expressionScore, baselineValue),
+            targetScore,
+            pathways: r.target.pathways?.map((p:any) => ({ id: p.pathway, label: p.pathway })) || []
+          });
         }
-
-        return {
-          id: r.target.id,
-          symbol: r.target.approvedSymbol,
-          name: r.target.approvedName,
-          overallScore: r.score,
-          geneticScore,
-          expressionScore,
-          baselineExpression: baselineValue,
-          combinedExpression: Math.max(expressionScore, baselineValue),
-          targetScore,
-          pathways: r.target.pathways?.map((p:any) => ({ id: p.pathway, label: p.pathway })) || []
-        };
-      });
+      }
+      return uniqueTargets;
     } catch (err) { return []; }
   },
 
@@ -124,13 +129,21 @@ export const api = {
       const res = await fetch(OPEN_TARGETS_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: GQL_QUERY, variables: { ensemblId } }) });
       const data = await res.json();
       const rows = data.data?.target?.knownDrugs?.rows || [];
-      return rows.map((r: any) => ({
-        id: r.drug.id,
-        name: r.drug.name,
-        phase: r.phase,
-        status: r.status,
-        mechanism: r.drug.mechanismsOfAction?.rows[0]?.mechanismOfAction || "Unknown Mechanism"
-      }));
+      const seen = new Set();
+      const uniqueDrugs: DrugInfo[] = [];
+      for (const r of rows) {
+        if (!seen.has(r.drug.id)) {
+          seen.add(r.drug.id);
+          uniqueDrugs.push({
+            id: r.drug.id,
+            name: r.drug.name,
+            phase: r.phase,
+            status: r.status,
+            mechanism: r.drug.mechanismsOfAction?.rows[0]?.mechanismOfAction || "Unknown Mechanism"
+          });
+        }
+      }
+      return uniqueDrugs;
     } catch (e) { return []; }
   },
 
