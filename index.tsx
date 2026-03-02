@@ -702,21 +702,30 @@ const App = () => {
       // Step 1: Fetch and Process Clinical Data
       const clinicalRows = await api.getTcgaClinical('brca');
       
-      const processedClinical = clinicalRows
+      const allProcessed = clinicalRows
         .map(row => {
-          // Extremely robust field mapping for clinical data
           const sid = row.SAMPLEID ?? row.sampleid ?? row.SampleID ?? row.sample_id ?? row.Sample_ID ?? row.sample ?? row.PATIENT_ID ?? row.patient_id;
           const os = row.OS_TIME ?? row.os_time ?? row.OsTime ?? row.os_days ?? row.days_to_last_followup ?? row.days_to_death ?? row.os ?? row.SURVIVAL_TIME ?? row.survival_time;
+          const race = row.RACE ?? row.race ?? row.Race ?? 'Unknown';
           return {
             sampleid: sid,
-            os_time: parseFloat(os)
+            os_time: parseFloat(os),
+            race: race
           };
         })
         .filter(row => row.sampleid && !isNaN(row.os_time));
 
+      // Extract unique races for the filter dropdown
+      const uniqueRaces = Array.from(new Set(allProcessed.map(p => p.race))).filter(Boolean).sort();
+
+      // Apply race filter if active
+      const processedClinical = researchState.activeRace 
+        ? allProcessed.filter(p => p.race === researchState.activeRace)
+        : allProcessed;
+
       if (processedClinical.length === 0) {
-        console.warn("No valid clinical records found for survival analysis. Sample row:", clinicalRows[0]);
-        setResearchState(p => ({ ...p, survivalMetrics: {}, medianOs: 0 }));
+        console.warn("No valid clinical records found for survival analysis after filtering. Sample row:", clinicalRows[0]);
+        setResearchState(p => ({ ...p, survivalMetrics: {}, medianOs: 0, availableRaces: uniqueRaces }));
         return;
       }
 
@@ -843,7 +852,9 @@ const App = () => {
           ...p, 
           targets: sortedTargets,
           survivalMetrics: metrics, 
-          medianOs: median
+          medianOs: median,
+          availableRaces: uniqueRaces,
+          lastAnalyzedRace: researchState.activeRace
         };
       });
     } catch (e) {
@@ -851,13 +862,14 @@ const App = () => {
     } finally {
       setResearchState(p => ({ ...p, isAnalyzingSurvival: false }));
     }
-  }, [isBrcaActive, researchState.targets]);
+  }, [isBrcaActive, researchState.targets, researchState.activeRace]);
 
   useEffect(() => {
-    if (viewMode === 'survival' && isBrcaActive && !researchState.survivalMetrics) {
+    const needsAnalysis = !researchState.survivalMetrics || researchState.lastAnalyzedRace !== researchState.activeRace;
+    if (viewMode === 'survival' && isBrcaActive && needsAnalysis && !researchState.isAnalyzingSurvival) {
       analyzeBrcaSurvival();
     }
-  }, [viewMode, isBrcaActive, researchState.survivalMetrics, analyzeBrcaSurvival]);
+  }, [viewMode, isBrcaActive, researchState.activeRace, researchState.survivalMetrics, researchState.lastAnalyzedRace, researchState.isAnalyzingSurvival, analyzeBrcaSurvival]);
 
   const handleToolExecution = useCallback(async (name: string, args: any) => {
     setLoading(true);
@@ -901,7 +913,7 @@ const App = () => {
         case 'update_view': { setViewMode(args.mode); return `Visualization focus shifted to ${args.mode}.`; }
         case 'get_score_distribution': {
           const scores = researchState.targets.map(t => (t as any)[args.scoreType]).filter(v => v !== undefined).sort((a, b) => a - b);
-          if (scores.length === 0) return "No data available for this score type.";
+          if (scores.length === 0) return "Target data not yet initialized. Please select a disease or therapeutic area first to generate the molecular prioritization list.";
           const min = scores[0];
           const max = scores[scores.length - 1];
           const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
@@ -960,13 +972,14 @@ Behavior Guidelines:
 - Answer technical questions about "how the app works" or its "sources" directly using the facts above.
 - If the user provides a disease name (even if misspelled like 'alzheimers'), use the 'search_diseases' tool.
 - Help users navigate visualizations by using the 'update_view' tool ONLY when they express interest in different data formats. Do NOT call this tool automatically unless requested.
-- When a user asks to filter the table (e.g., "filter by genetic score"), follow this protocol:
+- When a user asks to filter the table (e.g., "filter by genetic score"), follow this protocol ONLY if a disease is already active and targets are loaded:
   1. Call 'get_score_distribution' for the requested score type.
   2. MANDATORY: Once you have the distribution stats, use the 'suggest_filters' tool to provide a conversational message and a set of interactive filter buttons.
-  3. Suggest at least 2-3 meaningful thresholds based on the percentiles (e.g., "Top 25%", "Top 50%", "High Confidence").
-  4. The 'suggest_filters' tool will render buttons in the UI for the user to click.
-  5. If the user agrees or specifies a threshold, call 'apply_filter'.
-  6. To remove filters, call 'clear_filter'.
+  3. Suggest at least 2-3 meaningful thresholds using a numbered list (1., 2., 3.) based on the percentiles (e.g., "1. Top 25%", "2. Top 50%", "3. High Confidence"). This allows users to select a filter by typing its number.
+  4. Do NOT call 'get_score_distribution' in the same turn as 'search_diseases' or 'get_genes'. Wait for the user to ask for filters after the targets are displayed.
+  5. The 'suggest_filters' tool will render buttons in the UI for the user to click.
+  6. If the user agrees or specifies a threshold, call 'apply_filter'.
+  7. To remove filters, call 'clear_filter'.
 - Formatting: Always use Markdown for your responses. Use bolding, lists, and headers to make information scannable.
 - Tool Usage: Do NOT call multiple unrelated tools in one turn unless strictly necessary. For example, do not call 'get_genes' and 'update_view' unless the user specifically asked for both.
 - Maintain a professional, scientific, and helpful tone.`;
@@ -1037,7 +1050,14 @@ Behavior Guidelines:
       <header className={`px-6 py-3.5 flex items-center justify-between border-b ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-100'}`}>
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2.5"><FlaskConical className="w-5 h-5 text-blue-500" /><h1 className="text-base font-bold tracking-tight">Get<span className="text-blue-500">Gene</span></h1></div>
-          {researchState.activeDisease && (<div className="px-3 py-1 rounded bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 shadow-sm"><span className={`text-[10px] font-bold uppercase ${theme === 'dark' ? 'text-neutral-500' : 'text-black'}`}>PROJECT: {researchState.activeDisease.name}</span></div>)}
+          {researchState.activeDisease && (
+            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 shadow-sm">
+              <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+              <span className={`text-[10px] font-bold uppercase tracking-wider ${theme === 'dark' ? 'text-blue-400' : 'text-blue-700'}`}>
+                {researchState.activeDisease.name}
+              </span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <button onClick={() => setTheme(t=>t==='dark'?'light':'dark')} className="p-2 rounded hover:bg-neutral-100 transition-colors">{theme === 'dark' ? <Sun className="w-4 h-4 text-neutral-400" /> : <Moon className="w-4 h-4 text-neutral-600" />}</button>
@@ -1051,7 +1071,7 @@ Behavior Guidelines:
               {messages.map((m, i) => (
                 <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
                   <div className={`max-w-[95%] p-4 rounded-xl text-[14px] shadow-sm ${m.role === 'user' ? 'bg-blue-600 text-white' : (theme === 'dark' ? 'bg-[#171717] border border-neutral-800 text-neutral-200' : 'bg-white text-black border border-neutral-200 shadow-sm')}`}>
-                    <div className="markdown-body prose prose-sm dark:prose-invert max-w-none text-black dark:text-neutral-200">
+                    <div className="markdown-body prose prose-sm prose-neutral dark:prose-invert max-w-none text-neutral-900 dark:text-neutral-200">
                       <Markdown>{m.content}</Markdown>
                     </div>
                     {m.options && (
@@ -1269,9 +1289,30 @@ Behavior Guidelines:
                         <GeneTerrain targets={researchState.targets} selectedId={researchState.targets.find(t=>t.symbol===researchState.focusSymbol)?.id} onSelect={(t)=>setResearchState(p=>({...p, focusSymbol: t?.symbol || null}))} theme={theme} mode="survival" survivalMetrics={researchState.survivalMetrics} medianOs={researchState.medianOs} />
                       </div>
                       <div className={`w-80 flex flex-col overflow-hidden ${theme === 'dark' ? 'bg-[#0d0d0d]' : 'bg-white'}`}>
-                        <div className="p-4 border-b border-neutral-100 dark:border-neutral-800 flex items-center gap-2">
-                          <TableProperties className="w-4 h-4 text-neutral-500" />
-                          <span className="text-[11px] font-bold uppercase text-neutral-600 dark:text-neutral-400 tracking-wider">Cohort Comparison</span>
+                        <div className="p-4 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <TableProperties className="w-4 h-4 text-neutral-500" />
+                            <span className="text-[11px] font-bold uppercase text-neutral-600 dark:text-neutral-400 tracking-wider">Cohort Comparison</span>
+                          </div>
+                        </div>
+                        
+                        {/* Demographic Filters */}
+                        <div className="p-4 border-b border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/50">
+                          <div className="space-y-3">
+                            <div>
+                              <label className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 block">Filter by Race</label>
+                              <select 
+                                value={researchState.activeRace || ''} 
+                                onChange={(e) => setResearchState(p => ({ ...p, activeRace: e.target.value || undefined, survivalMetrics: undefined }))}
+                                className={`w-full p-2.5 rounded-lg border text-[11px] font-semibold outline-none transition-all ${theme === 'dark' ? 'bg-[#0a0a0a] border-neutral-800 text-white focus:border-blue-600' : 'bg-white border-neutral-200 text-neutral-900 focus:border-blue-600'}`}
+                              >
+                                <option value="">All Races</option>
+                                {researchState.availableRaces?.map(r => (
+                                  <option key={r} value={r}>{r}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
                         </div>
                         <div className="flex-1 overflow-auto">
                           {researchState.isAnalyzingSurvival ? (

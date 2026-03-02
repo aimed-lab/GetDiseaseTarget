@@ -60,6 +60,7 @@ export interface ClinicalSample {
   gender: string;
   vital_status: string;
   ajcc_pathologic_tumor_stage: string;
+  race: string;
   os_time: string;
   os?: string; // Overall survival indicator (0=High/Alive, 1=Low/Dead)
 }
@@ -98,6 +99,9 @@ export interface ResearchContext {
   limit: number;
   currentPage: number;
   focusSymbol: string | null;
+  activeRace?: string;
+  lastAnalyzedRace?: string;
+  availableRaces?: string[];
   survivalMetrics?: SurvivalMetrics;
   isAnalyzingSurvival?: boolean;
   medianOs?: number;
