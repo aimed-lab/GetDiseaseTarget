@@ -100,8 +100,14 @@ export interface ResearchContext {
   currentPage: number;
   focusSymbol: string | null;
   activeRace?: string;
+  activeGender?: string;
+  activeAgeGroup?: string;
   lastAnalyzedRace?: string;
+  lastAnalyzedGender?: string;
+  lastAnalyzedAgeGroup?: string;
   availableRaces?: string[];
+  availableGenders?: string[];
+  availableAgeGroups?: string[];
   survivalMetrics?: SurvivalMetrics;
   isAnalyzingSurvival?: boolean;
   medianOs?: number;

@@ -707,25 +707,55 @@ const App = () => {
           const sid = row.SAMPLEID ?? row.sampleid ?? row.SampleID ?? row.sample_id ?? row.Sample_ID ?? row.sample ?? row.PATIENT_ID ?? row.patient_id;
           const os = row.OS_TIME ?? row.os_time ?? row.OsTime ?? row.os_days ?? row.days_to_last_followup ?? row.days_to_death ?? row.os ?? row.SURVIVAL_TIME ?? row.survival_time;
           const race = row.RACE ?? row.race ?? row.Race ?? 'Unknown';
+          const gender = row.GENDER ?? row.gender ?? row.Gender ?? 'Unknown';
+          const ageRaw = row.AGE_AT_INITIAL_PATHOLOGIC_DIAGNOSIS ?? row.age_at_initial_pathologic_diagnosis ?? row.age ?? row.Age ?? '0';
+          const age = parseInt(ageRaw) || 0;
+          
+          let ageGroup = 'Unknown';
+          if (age > 0) {
+            if (age < 40) ageGroup = '< 40';
+            else if (age <= 60) ageGroup = '40-60';
+            else if (age <= 80) ageGroup = '60-80';
+            else ageGroup = '> 80';
+          }
+
           return {
             sampleid: sid,
             os_time: parseFloat(os),
-            race: race
+            race: race,
+            gender: gender,
+            ageGroup: ageGroup
           };
         })
         .filter(row => row.sampleid && !isNaN(row.os_time));
 
-      // Extract unique races for the filter dropdown
+      // Extract unique values for filters
       const uniqueRaces = Array.from(new Set(allProcessed.map(p => p.race))).filter(Boolean).sort();
+      const uniqueGenders = Array.from(new Set(allProcessed.map(p => p.gender))).filter(Boolean).sort();
+      const uniqueAgeGroups = Array.from(new Set(allProcessed.map(p => p.ageGroup))).filter(Boolean).sort();
 
-      // Apply race filter if active
-      const processedClinical = researchState.activeRace 
-        ? allProcessed.filter(p => p.race === researchState.activeRace)
-        : allProcessed;
+      // Apply filters
+      let processedClinical = allProcessed;
+      if (researchState.activeRace) {
+        processedClinical = processedClinical.filter(p => p.race === researchState.activeRace);
+      }
+      if (researchState.activeGender) {
+        processedClinical = processedClinical.filter(p => p.gender === researchState.activeGender);
+      }
+      if (researchState.activeAgeGroup) {
+        processedClinical = processedClinical.filter(p => p.ageGroup === researchState.activeAgeGroup);
+      }
 
       if (processedClinical.length === 0) {
-        console.warn("No valid clinical records found for survival analysis after filtering. Sample row:", clinicalRows[0]);
-        setResearchState(p => ({ ...p, survivalMetrics: {}, medianOs: 0, availableRaces: uniqueRaces }));
+        console.warn("No valid clinical records found for survival analysis after filtering.");
+        setResearchState(p => ({ 
+          ...p, 
+          survivalMetrics: {}, 
+          medianOs: 0, 
+          availableRaces: uniqueRaces,
+          availableGenders: uniqueGenders,
+          availableAgeGroups: uniqueAgeGroups
+        }));
         return;
       }
 
@@ -854,7 +884,11 @@ const App = () => {
           survivalMetrics: metrics, 
           medianOs: median,
           availableRaces: uniqueRaces,
-          lastAnalyzedRace: researchState.activeRace
+          availableGenders: uniqueGenders,
+          availableAgeGroups: uniqueAgeGroups,
+          lastAnalyzedRace: researchState.activeRace,
+          lastAnalyzedGender: researchState.activeGender,
+          lastAnalyzedAgeGroup: researchState.activeAgeGroup
         };
       });
     } catch (e) {
@@ -862,14 +896,17 @@ const App = () => {
     } finally {
       setResearchState(p => ({ ...p, isAnalyzingSurvival: false }));
     }
-  }, [isBrcaActive, researchState.targets, researchState.activeRace]);
+  }, [isBrcaActive, researchState.targets, researchState.activeRace, researchState.activeGender, researchState.activeAgeGroup]);
 
   useEffect(() => {
-    const needsAnalysis = !researchState.survivalMetrics || researchState.lastAnalyzedRace !== researchState.activeRace;
+    const needsAnalysis = !researchState.survivalMetrics || 
+      researchState.lastAnalyzedRace !== researchState.activeRace ||
+      researchState.lastAnalyzedGender !== researchState.activeGender ||
+      researchState.lastAnalyzedAgeGroup !== researchState.activeAgeGroup;
     if (viewMode === 'survival' && isBrcaActive && needsAnalysis && !researchState.isAnalyzingSurvival) {
       analyzeBrcaSurvival();
     }
-  }, [viewMode, isBrcaActive, researchState.activeRace, researchState.survivalMetrics, researchState.lastAnalyzedRace, researchState.isAnalyzingSurvival, analyzeBrcaSurvival]);
+  }, [viewMode, isBrcaActive, researchState.activeRace, researchState.activeGender, researchState.activeAgeGroup, researchState.survivalMetrics, researchState.lastAnalyzedRace, researchState.lastAnalyzedGender, researchState.lastAnalyzedAgeGroup, researchState.isAnalyzingSurvival, analyzeBrcaSurvival]);
 
   const handleToolExecution = useCallback(async (name: string, args: any) => {
     setLoading(true);
@@ -1309,6 +1346,34 @@ Behavior Guidelines:
                                 <option value="">All Races</option>
                                 {researchState.availableRaces?.map(r => (
                                   <option key={r} value={r}>{r}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 block">Filter by Gender</label>
+                              <select 
+                                value={researchState.activeGender || ''} 
+                                onChange={(e) => setResearchState(p => ({ ...p, activeGender: e.target.value || undefined, survivalMetrics: undefined }))}
+                                className={`w-full p-2.5 rounded-lg border text-[11px] font-semibold outline-none transition-all ${theme === 'dark' ? 'bg-[#0a0a0a] border-neutral-800 text-white focus:border-blue-600' : 'bg-white border-neutral-200 text-neutral-900 focus:border-blue-600'}`}
+                              >
+                                <option value="">All Genders</option>
+                                {researchState.availableGenders?.map(g => (
+                                  <option key={g} value={g}>{g}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 block">Filter by Age Group</label>
+                              <select 
+                                value={researchState.activeAgeGroup || ''} 
+                                onChange={(e) => setResearchState(p => ({ ...p, activeAgeGroup: e.target.value || undefined, survivalMetrics: undefined }))}
+                                className={`w-full p-2.5 rounded-lg border text-[11px] font-semibold outline-none transition-all ${theme === 'dark' ? 'bg-[#0a0a0a] border-neutral-800 text-white focus:border-blue-600' : 'bg-white border-neutral-200 text-neutral-900 focus:border-blue-600'}`}
+                              >
+                                <option value="">All Ages</option>
+                                {researchState.availableAgeGroups?.map(a => (
+                                  <option key={a} value={a}>{a}</option>
                                 ))}
                               </select>
                             </div>
