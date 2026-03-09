@@ -201,25 +201,9 @@ export const api = {
     }
   },
 
-  async getBrcaClinical(offset: number = 0): Promise<ClinicalSample[]> {
+  async getTcgaClinical(cancerType: string, offset: number = 0): Promise<any[]> {
     try {
-      const res = await fetch(`https://aimed.uab.edu/apex/gtkb/clinical_data/pancan/brca?offset=${offset}`);
-      const data = await res.json();
-      return data.items || [];
-    } catch (e) { return []; }
-  },
-
-  async getBrcaExpression(sampleId: string): Promise<ExpressionRow[]> {
-    try {
-      const res = await fetch(`https://aimed.uab.edu/apex/gtkb/gene_exp/pancan/brca/${sampleId}`);
-      const data = await res.json();
-      return data.items || [];
-    } catch (e) { return []; }
-  },
-
-  async getTcgaClinical(cancerType: string): Promise<any[]> {
-    try {
-      const res = await fetch(`https://aimed.uab.edu/apex/gtkb/clinical_data/pancan/${cancerType.toLowerCase()}`);
+      const res = await fetch(`https://aimed.uab.edu/apex/gtkb/clinical_data/pancan/${cancerType.toLowerCase()}?offset=${offset}`);
       if (!res.ok) throw new Error(`API error: ${res.status}`);
       const data = await res.json();
       return data.items || data.rows || (Array.isArray(data) ? data : []);
@@ -232,11 +216,11 @@ export const api = {
   async getTcgaExpressionPage(cancerType: string, genes: string[], offset: number): Promise<{ items: any[], hasMore: boolean }> {
     try {
       const genesParam = genes.join(',');
-      const res = await fetch(`https://aimed.uab.edu/apex/gtkb/gene_exp/${cancerType.toLowerCase()}?genes=${genesParam}&offset=${offset}&row_limit=10000`);
+      const res = await fetch(`https://aimed.uab.edu/apex/gtkb/gene_exp/data?condition=${cancerType.toLowerCase()}&genes=${genesParam}&row_limit=10000`);
       if (!res.ok) throw new Error(`API error: ${res.status}`);
       const data = await res.json();
       return {
-        items: data.items || data.rows || (Array.isArray(data) ? data : []),
+        items: data.result || data.items || data.rows || (Array.isArray(data) ? data : []),
         hasMore: data.hasMore || false
       };
     } catch (e) { 

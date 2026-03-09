@@ -105,6 +105,27 @@ const getDemoExpression = (symbol: string, patientId: string) => {
   return (Math.abs(hash % 100) / 100);
 };
 
+const CANCER_TYPE_MAP: Record<string, string> = {
+  'bladder': 'BLCA',
+  'breast': 'BRCA',
+  'cervical': 'CESC',
+  'cholangiocarcinoma': 'CHOL',
+  'kidney': 'KIRC',
+  'brca': 'BRCA',
+  'blca': 'BLCA',
+  'cesc': 'CESC',
+  'chol': 'CHOL',
+  'kirc': 'KIRC'
+};
+
+const detectCancerType = (name: string) => {
+  const lowerName = name.toLowerCase();
+  for (const [key, code] of Object.entries(CANCER_TYPE_MAP)) {
+    if (lowerName.includes(key)) return code;
+  }
+  return null;
+};
+
 // --- Helper Components for Visualization ---
 
 const RadarChart = ({ target, theme }: { target: Target, theme: Theme }) => {
@@ -532,7 +553,7 @@ const GeneTerrain = ({ targets, onSelect, selectedId, theme, mode = 'default', s
   );
 };
 
-const RawDataView = ({ targets, theme }: { targets: Target[], theme: Theme }) => {
+const RawDataView = ({ targets, theme, cancerType }: { targets: Target[], theme: Theme, cancerType: string }) => {
   const [clinicalData, setClinicalData] = useState<ClinicalSample[]>([]);
   const [selectedSample, setSelectedSample] = useState<ClinicalSample | null>(null);
   const [expressionData, setExpressionData] = useState<ExpressionRow[]>([]);
@@ -541,8 +562,44 @@ const RawDataView = ({ targets, theme }: { targets: Target[], theme: Theme }) =>
   const [showOnlyGetGenes, setShowOnlyGetGenes] = useState(true);
   const [offset, setOffset] = useState(0);
   const getTargetSymbols = useMemo(() => new Set(targets.map(t => t.symbol)), [targets]);
-  useEffect(() => { const fetchClinical = async () => { setLoadingClinical(true); const data = await api.getBrcaClinical(offset); setClinicalData(data); setLoadingClinical(false); }; fetchClinical(); }, [offset]);
-  const handleSelectSample = async (sample: ClinicalSample) => { setSelectedSample(sample); setLoadingExpression(true); const data = await api.getBrcaExpression(sample.sampleid); setExpressionData(data); setLoadingExpression(false); };
+  
+  useEffect(() => { 
+    const fetchClinical = async () => { 
+      setLoadingClinical(true); 
+      const data = await api.getTcgaClinical(cancerType, offset); 
+      // Normalize clinical data keys
+      const normalized = data.map(item => ({
+        sampleid: item.SAMPLEID ?? item.sampleid ?? item.SampleID ?? item.sample_id ?? item.sample ?? item.PATIENT_ID ?? item.patient_id,
+        vital_status: item.VITAL_STATUS ?? item.vital_status ?? item.VitalStatus ?? 'Unknown'
+      }));
+      setClinicalData(normalized); 
+      setLoadingClinical(false); 
+    }; 
+    fetchClinical(); 
+  }, [offset, cancerType]);
+
+  const handleSelectSample = async (sample: ClinicalSample) => { 
+    setSelectedSample(sample); 
+    setLoadingExpression(true); 
+    
+    // Use the new expression API format
+    // Since we need expression for a specific sample, we fetch the target genes
+    // and filter for this sample. If "Show All" is selected, we are limited by the API
+    // so we'll primarily support the target list genes.
+    const genesToFetch = showOnlyGetGenes ? Array.from(getTargetSymbols) : ['TP53', 'BRCA1', 'EGFR', 'MYC', 'PTEN']; // Fallback small list if not filtered
+    
+    const page = await api.getTcgaExpressionPage(cancerType, genesToFetch, 0);
+    const sampleRows = page.items.filter(item => {
+      const sid = (item.SAMPLEID ?? item.sampleid ?? item.SampleID ?? item.sample_id ?? item.sample ?? item.PATIENT_ID ?? item.patient_id)?.toString().trim().toUpperCase();
+      return sid === sample.sampleid.toString().trim().toUpperCase();
+    }).map(item => ({
+      gene_symbol: (item.GENE_SYMBOL ?? item.gene_symbol ?? item.GeneSymbol ?? item.symbol ?? item.Symbol ?? item.gene),
+      value: (item.EXPRESSION_VALUE ?? item.value ?? item.expression_value ?? item.ExpressionValue ?? item.tpm ?? item.TPM ?? item.exp)
+    }));
+    
+    setExpressionData(sampleRows); 
+    setLoadingExpression(false); 
+  };
   const filteredExpression = useMemo(() => { if (!showOnlyGetGenes) return expressionData; return expressionData.filter(row => getTargetSymbols.has(row.gene_symbol)); }, [expressionData, getTargetSymbols, showOnlyGetGenes]);
   return (
     <div className="h-full flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-neutral-100 dark:divide-neutral-800">
@@ -684,7 +741,10 @@ const App = () => {
     }
   };
 
-  const isBrcaActive = useMemo(() => researchState.activeDisease?.name.toLowerCase().includes('brca') || researchState.activeDisease?.name.toLowerCase().includes('breast'), [researchState.activeDisease]);
+  const activeCancerType = useMemo(() => {
+    if (!researchState.activeDisease) return null;
+    return detectCancerType(researchState.activeDisease.name);
+  }, [researchState.activeDisease]);
   
   const displayTargets = useMemo(() => {
     if (!researchState.filter) return researchState.targets;
@@ -695,17 +755,17 @@ const App = () => {
     });
   }, [researchState.targets, researchState.filter]);
 
-  const analyzeBrcaSurvival = useCallback(async () => {
-    if (!isBrcaActive || researchState.targets.length === 0) return;
+  const analyzeSurvival = useCallback(async () => {
+    if (!activeCancerType || researchState.targets.length === 0) return;
     setResearchState(p => ({ ...p, isAnalyzingSurvival: true }));
     try {
       // Step 1: Fetch and Process Clinical Data
-      const clinicalRows = await api.getTcgaClinical('brca');
+      const clinicalRows = await api.getTcgaClinical(activeCancerType);
       
       const allProcessed = clinicalRows
         .map(row => {
           const sid = row.SAMPLEID ?? row.sampleid ?? row.SampleID ?? row.sample_id ?? row.Sample_ID ?? row.sample ?? row.PATIENT_ID ?? row.patient_id;
-          const os = row.OS_TIME ?? row.os_time ?? row.OsTime ?? row.os_days ?? row.days_to_last_followup ?? row.days_to_death ?? row.os ?? row.SURVIVAL_TIME ?? row.survival_time;
+          const os = row["os_time"] ?? row["os.time"] ?? row.OS_TIME ?? row.OsTime ?? row.os_days ?? row.days_to_last_followup ?? row.days_to_death ?? row.SURVIVAL_TIME ?? row.survival_time;
           const race = row.RACE ?? row.race ?? row.Race ?? 'Unknown';
           const gender = row.GENDER ?? row.gender ?? row.Gender ?? 'Unknown';
           const ageRaw = row.AGE_AT_INITIAL_PATHOLOGIC_DIAGNOSIS ?? row.age_at_initial_pathologic_diagnosis ?? row.age ?? row.Age ?? '0';
@@ -798,41 +858,35 @@ const App = () => {
       // Split into batches of 10 genes for better reliability
       for (let i = 0; i < geneSymbols.length; i += 10) {
         const batch = geneSymbols.slice(i, i + 10);
-        let offset = 0;
-        let hasMore = true;
+        
+        const page = await api.getTcgaExpressionPage(activeCancerType, batch, 0);
+        if (!page.items) continue;
 
-        while (hasMore) {
-          const page = await api.getTcgaExpressionPage('brca', batch, offset);
-          if (!page.items || page.items.length === 0) break;
-
-          page.items.forEach(item => {
-            const sid = (item.SAMPLEID ?? item.sampleid ?? item.SampleID ?? item.sample_id ?? item.Sample_ID ?? item.sample ?? item.PATIENT_ID ?? item.patient_id)?.toString().trim().toUpperCase();
-            const gene = (item.GENE_SYMBOL ?? item.gene_symbol ?? item.GeneSymbol ?? item.symbol ?? item.Symbol ?? item.gene)?.toString().trim().toUpperCase();
-            const rawVal = item.EXPRESSION_VALUE ?? item.value ?? item.expression_value ?? item.ExpressionValue ?? item.tpm ?? item.TPM ?? item.exp;
-            const val = Number(rawVal);
-            
-            if (sid && gene && groupMap[sid] && !isNaN(val)) {
-              // We check if the gene is in our initialization list to avoid NaN
-              if (countHigh[gene] !== undefined) {
-                if (groupMap[sid] === 'HIGH') {
-                  sumHigh[gene] += val;
-                  countHigh[gene]++;
-                } else {
-                  sumLow[gene] += val;
-                  countLow[gene]++;
-                }
+        page.items.forEach(item => {
+          const sid = (item.SAMPLEID ?? item.sampleid ?? item.SampleID ?? item.sample_id ?? item.Sample_ID ?? item.sample ?? item.PATIENT_ID ?? item.patient_id)?.toString().trim().toUpperCase();
+          const gene = (item.GENE_SYMBOL ?? item.gene_symbol ?? item.GeneSymbol ?? item.symbol ?? item.Symbol ?? item.gene)?.toString().trim().toUpperCase();
+          const rawVal = item.EXPRESSION_VALUE ?? item.value ?? item.expression_value ?? item.ExpressionValue ?? item.tpm ?? item.TPM ?? item.exp;
+          const val = Number(rawVal);
+          
+          if (sid && gene && groupMap[sid] && !isNaN(val)) {
+            // We check if the gene is in our initialization list to avoid NaN
+            if (countHigh[gene] !== undefined) {
+              if (groupMap[sid] === 'HIGH') {
+                sumHigh[gene] += val;
+                countHigh[gene]++;
+              } else {
+                sumLow[gene] += val;
+                countLow[gene]++;
               }
             }
-          });
-          offset += 10000;
-          hasMore = page.hasMore;
-          if (offset > 1000000) break; 
-        }
+          }
+        });
       }
 
       console.log('Example counts TP53:', countHigh['TP53'], countLow['TP53']);
       console.log('Example means TP53:', sumHigh['TP53']/countHigh['TP53'], sumLow['TP53']/countLow['TP53']);
-
+      console.log("Sample groupMap keys (first 3):", Object.keys(groupMap).slice(0, 3));
+      console.log("Total grouped patients:", Object.keys(groupMap).length);        
       // Step 3: Compute Final Metrics
       const metrics: SurvivalMetrics = {};
       const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
@@ -896,17 +950,17 @@ const App = () => {
     } finally {
       setResearchState(p => ({ ...p, isAnalyzingSurvival: false }));
     }
-  }, [isBrcaActive, researchState.targets, researchState.activeRace, researchState.activeGender, researchState.activeAgeGroup]);
+  }, [activeCancerType, researchState.targets, researchState.activeRace, researchState.activeGender, researchState.activeAgeGroup]);
 
   useEffect(() => {
     const needsAnalysis = !researchState.survivalMetrics || 
       researchState.lastAnalyzedRace !== researchState.activeRace ||
       researchState.lastAnalyzedGender !== researchState.activeGender ||
       researchState.lastAnalyzedAgeGroup !== researchState.activeAgeGroup;
-    if (viewMode === 'survival' && isBrcaActive && needsAnalysis && !researchState.isAnalyzingSurvival) {
-      analyzeBrcaSurvival();
+    if (viewMode === 'survival' && activeCancerType && needsAnalysis && !researchState.isAnalyzingSurvival) {
+      analyzeSurvival();
     }
-  }, [viewMode, isBrcaActive, researchState.activeRace, researchState.activeGender, researchState.activeAgeGroup, researchState.survivalMetrics, researchState.lastAnalyzedRace, researchState.lastAnalyzedGender, researchState.lastAnalyzedAgeGroup, researchState.isAnalyzingSurvival, analyzeBrcaSurvival]);
+  }, [viewMode, activeCancerType, researchState.activeRace, researchState.activeGender, researchState.activeAgeGroup, researchState.survivalMetrics, researchState.lastAnalyzedRace, researchState.lastAnalyzedGender, researchState.lastAnalyzedAgeGroup, researchState.isAnalyzingSurvival, analyzeSurvival]);
 
   const handleToolExecution = useCallback(async (name: string, args: any) => {
     setLoading(true);
@@ -1154,7 +1208,7 @@ Behavior Guidelines:
            </div>
            <div className={`flex-1 rounded-2xl border overflow-hidden relative ${theme === 'dark' ? 'bg-[#121212] border-neutral-800' : 'bg-white shadow-lg'}`}>
               {(loading || researchState.isAnalyzingSurvival) && (<div className="absolute inset-0 bg-neutral-900/40 backdrop-blur-[2px] z-50 flex flex-col items-center justify-center gap-4"><Loader2 className="w-8 h-8 animate-spin text-blue-500" /><p className="text-[11px] font-bold uppercase text-white tracking-widest">Mapping Intelligence...</p></div>)}
-              {researchState.targets.length === 0 && viewMode !== 'raw' ? (<div className="h-full flex flex-col items-center justify-center p-20 text-center"><Search className="w-16 h-16 text-blue-500 mb-8 opacity-20" /><h2 className="text-xl font-bold mb-2 text-neutral-800 dark:text-neutral-200 tracking-tight">System Ready for Research Focus</h2><p className="text-sm text-neutral-600 dark:text-neutral-500 max-w-sm leading-relaxed">Search for a therapeutic area or disease in the terminal to begin multi-modal target discovery.</p></div>) : (viewMode === 'raw' || viewMode === 'survival') && !isBrcaActive ? (<div className="h-full flex flex-col items-center justify-center p-12 text-center"><div className="p-5 rounded-full bg-blue-50 dark:bg-blue-900/20 mb-6"><AlertCircle className="w-12 h-12 text-blue-600" /></div><h3 className="text-xl font-bold mb-2 text-neutral-800 dark:text-neutral-200">Optimized Context Required</h3><p className="text-sm max-w-md text-neutral-600 dark:text-neutral-500 leading-relaxed">Cohort and Outcome analytics are currently specifically tuned for high-resolution BRCA (Breast Cancer) studies.</p></div>) : (
+              {researchState.targets.length === 0 && viewMode !== 'raw' ? (<div className="h-full flex flex-col items-center justify-center p-20 text-center"><Search className="w-16 h-16 text-blue-500 mb-8 opacity-20" /><h2 className="text-xl font-bold mb-2 text-neutral-800 dark:text-neutral-200 tracking-tight">System Ready for Research Focus</h2><p className="text-sm text-neutral-600 dark:text-neutral-500 max-w-sm leading-relaxed">Search for a therapeutic area or disease in the terminal to begin multi-modal target discovery.</p></div>) : (viewMode === 'raw' || viewMode === 'survival') && !activeCancerType ? (<div className="h-full flex flex-col items-center justify-center p-12 text-center"><div className="p-5 rounded-full bg-blue-50 dark:bg-blue-900/20 mb-6"><AlertCircle className="w-12 h-12 text-blue-600" /></div><h3 className="text-xl font-bold mb-2 text-neutral-800 dark:text-neutral-200">Optimized Context Required</h3><p className="text-sm max-w-md text-neutral-600 dark:text-neutral-500 leading-relaxed">Cohort and Outcome analytics are currently specifically tuned for high-resolution TCGA (e.g. BRCA, KIRC, BLCA) studies.</p></div>) : (
                 <>
                   {viewMode === 'list' && (
                     <div className="h-full flex flex-col">
@@ -1329,7 +1383,7 @@ Behavior Guidelines:
                         <div className="p-4 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <TableProperties className="w-4 h-4 text-neutral-500" />
-                            <span className="text-[11px] font-bold uppercase text-neutral-600 dark:text-neutral-400 tracking-wider">Cohort Comparison</span>
+                            <span className="text-[11px] font-bold uppercase text-neutral-600 dark:text-neutral-400 tracking-wider">{activeCancerType} Cohort Comparison</span>
                           </div>
                         </div>
                         
@@ -1417,7 +1471,7 @@ Behavior Guidelines:
                       </div>
                     </div>
                   )}
-                  {viewMode === 'raw' && <RawDataView targets={researchState.targets} theme={theme} />}
+                  {viewMode === 'raw' && <RawDataView targets={researchState.targets} theme={theme} cancerType={activeCancerType || 'BRCA'} />}
                 </>
               )}
            </div>

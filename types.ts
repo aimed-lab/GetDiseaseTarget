@@ -54,19 +54,19 @@ export interface PubMedStats {
 
 export interface ClinicalSample {
   sampleid: string;
-  sample_type: string;
-  _primary_disease: string;
-  age_at_initial_pathologic_diagnosis: string;
-  gender: string;
+  sample_type?: string;
+  _primary_disease?: string;
+  age_at_initial_pathologic_diagnosis?: string;
+  gender?: string;
   vital_status: string;
-  ajcc_pathologic_tumor_stage: string;
-  race: string;
-  os_time: string;
+  ajcc_pathologic_tumor_stage?: string;
+  race?: string;
+  os_time?: string;
   os?: string; // Overall survival indicator (0=High/Alive, 1=Low/Dead)
 }
 
 export interface ExpressionRow {
-  sampleid: string;
+  sampleid?: string;
   gene_symbol: string;
   value: string;
 }
