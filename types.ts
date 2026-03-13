@@ -3,6 +3,15 @@ export interface Pathway {
   label: string;
 }
 
+export interface DrillDownData {
+  trial_count: number;
+  max_phase: string;
+  active_trial_present: boolean;
+  paper_count: number;
+  recent_paper_count: number;
+  latest_publication_date: string;
+}
+
 export interface Target {
   id: string;
   symbol: string;
@@ -10,10 +19,14 @@ export interface Target {
   overallScore: number;
   geneticScore: number;
   expressionScore: number;
+  literatureScore?: number;
+  clinicalScore?: number;
+  noveltyScore?: number;
   baselineExpression?: number; 
   combinedExpression?: number; 
   targetScore: number; 
   pathways: Pathway[];
+  drillDown?: DrillDownData;
   x?: number;
   y?: number;
   vx?: number;
@@ -92,6 +105,20 @@ export type Theme = 'dark' | 'light';
 export type ViewMode = 'list' | 'correlation' | 'enrichment' | 'graph' | 'terrain' | 'survival' | 'raw';
 export type TerrainLayer = 'gaussian' | 'discrete' | 'water' | 'sky';
 
+export interface FilterCondition {
+  field: string;
+  operator: string;
+  value?: number;
+  value2?: number;
+  boolValue?: boolean;
+  stringValue?: string;
+}
+
+export interface SortCondition {
+  field: string;
+  direction: 'asc' | 'desc';
+}
+
 export interface ResearchContext {
   activeDisease: DiseaseInfo | null;
   targets: Target[];
@@ -111,7 +138,8 @@ export interface ResearchContext {
   survivalMetrics?: SurvivalMetrics;
   isAnalyzingSurvival?: boolean;
   medianOs?: number;
-  filter?: { scoreType: string; threshold: number; operator: 'gt' | 'lt' };
+  filters: FilterCondition[];
+  sorts: SortCondition[];
 }
 
 export interface Message {
@@ -120,4 +148,5 @@ export interface Message {
   timestamp: Date;
   options?: DiseaseInfo[];
   filterOptions?: { label: string; scoreType: string; threshold: number; operator: 'gt' | 'lt' }[];
+  toolCall?: string;
 }

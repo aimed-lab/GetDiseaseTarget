@@ -1,4 +1,4 @@
-import { Target, DrugInfo, DiseaseInfo, EnrichmentResult, PubMedStats, ClinicalSample, ExpressionRow } from './types';
+import { Target, DrugInfo, DiseaseInfo, EnrichmentResult, PubMedStats, ClinicalSample, ExpressionRow, DrillDownData } from './types';
 import { GoogleGenAI } from "@google/genai";
 
 const OPEN_TARGETS_API = 'https://api.platform.opentargets.org/api/v4/graphql';
@@ -93,6 +93,9 @@ export const api = {
           const geneticScore = r.datatypeScores.find((s:any) => s.id.includes('genetic'))?.score || 0;
           const expressionScore = r.datatypeScores.find((s:any) => s.id.includes('rna'))?.score || 0;
           const targetScore = r.datatypeScores.find((s:any) => s.id.includes('drug'))?.score || 0;
+          const literatureScore = r.datatypeScores.find((s:any) => s.id.includes('literature'))?.score || 0;
+          const clinicalScore = r.datatypeScores.find((s:any) => s.id.includes('known_drug'))?.score || 0;
+          const noveltyScore = 1 - literatureScore;
 
           const expressions = r.target.expressions || [];
           const brainTissues = ['brain', 'cortex', 'hippocampus', 'cerebellum'];
@@ -112,6 +115,9 @@ export const api = {
             overallScore: r.score,
             geneticScore,
             expressionScore,
+            literatureScore,
+            clinicalScore,
+            noveltyScore,
             baselineExpression: baselineValue,
             combinedExpression: Math.max(expressionScore, baselineValue),
             targetScore,
@@ -199,6 +205,72 @@ export const api = {
       console.error(`PubMed fetch failed [${symbol}/${diseaseName}]:`, e);
       return { total: 0, recent: 0, topPapers: [], searchLink, primarySearchLink };
     }
+  },
+
+  async getDrillDownData(symbol: string, diseaseName: string): Promise<DrillDownData> {
+    const drillDown: DrillDownData = {
+      trial_count: 0,
+      max_phase: 'N/A',
+      active_trial_present: false,
+      paper_count: 0,
+      recent_paper_count: 0,
+      latest_publication_date: 'N/A'
+    };
+
+    try {
+      // 1. ClinicalTrials.gov API v2
+      const ctUrl = `https://clinicaltrials.gov/api/v2/studies?query.cond=${encodeURIComponent(diseaseName)}&query.term=${encodeURIComponent(symbol)}&pageSize=100&fields=NCTId,Phase,OverallStatus`;
+      const ctRes = await fetch(ctUrl);
+      if (ctRes.ok) {
+        const ctData = await ctRes.json();
+        const studies = ctData.studies || [];
+        drillDown.trial_count = ctData.totalCount || studies.length;
+        
+        const phases = studies.flatMap((s: any) => s.protocolSection?.designModule?.phases || []);
+        const phaseOrder = ['EARLY_PHASE1', 'PHASE1', 'PHASE2', 'PHASE3', 'PHASE4'];
+        let maxPhaseIdx = -1;
+        phases.forEach((p: string) => {
+          const idx = phaseOrder.indexOf(p);
+          if (idx > maxPhaseIdx) maxPhaseIdx = idx;
+        });
+        drillDown.max_phase = maxPhaseIdx >= 0 ? phaseOrder[maxPhaseIdx] : 'N/A';
+
+        const activeStatuses = ['RECRUITING', 'ACTIVE_NOT_RECRUITING', 'ENROLLING_BY_INVITATION', 'NOT_YET_RECRUITING'];
+        drillDown.active_trial_present = studies.some((s: any) => 
+          activeStatuses.includes(s.protocolSection?.statusModule?.overallStatus)
+        );
+      }
+
+      // 2. Europe PMC
+      const currentYear = new Date().getFullYear();
+      const threeYearsAgo = currentYear - 3;
+      const epQuery = `${symbol} AND "${diseaseName}"`;
+      const epRecentQuery = `${symbol} AND "${diseaseName}" AND FIRST_PDATE:[${threeYearsAgo}-01-01 TO ${currentYear}-12-31]`;
+      
+      const [epTotalRes, epRecentRes] = await Promise.all([
+        fetch(`https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=${encodeURIComponent(epQuery)}&format=json&pageSize=1&sort_date:y`),
+        fetch(`https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=${encodeURIComponent(epRecentQuery)}&format=json&pageSize=1`)
+      ]);
+
+      if (epTotalRes.ok) {
+        const epTotalData = await epTotalRes.json();
+        drillDown.paper_count = epTotalData.hitCount || 0;
+        if (epTotalData.resultList?.result?.length > 0) {
+          const firstResult = epTotalData.resultList.result[0];
+          drillDown.latest_publication_date = firstResult.firstPubDate || firstResult.pubYear || 'N/A';
+        }
+      }
+
+      if (epRecentRes.ok) {
+        const epRecentData = await epRecentRes.json();
+        drillDown.recent_paper_count = epRecentData.hitCount || 0;
+      }
+
+    } catch (e) {
+      console.error("Drill down fetch failed:", e);
+    }
+
+    return drillDown;
   },
 
   async getTcgaClinical(cancerType: string, offset: number = 0): Promise<any[]> {
