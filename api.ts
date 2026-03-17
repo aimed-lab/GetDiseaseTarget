@@ -219,26 +219,47 @@ export const api = {
 
     try {
       // 1. ClinicalTrials.gov API v2
-      const ctUrl = `https://clinicaltrials.gov/api/v2/studies?query.cond=${encodeURIComponent(diseaseName)}&query.term=${encodeURIComponent(symbol)}&pageSize=100&fields=NCTId,Phase,OverallStatus`;
-      const ctRes = await fetch(ctUrl);
-      if (ctRes.ok) {
-        const ctData = await ctRes.json();
-        const studies = ctData.studies || [];
-        drillDown.trial_count = ctData.totalCount || studies.length;
-        
-        const phases = studies.flatMap((s: any) => s.protocolSection?.designModule?.phases || []);
-        const phaseOrder = ['EARLY_PHASE1', 'PHASE1', 'PHASE2', 'PHASE3', 'PHASE4'];
-        let maxPhaseIdx = -1;
-        phases.forEach((p: string) => {
-          const idx = phaseOrder.indexOf(p);
-          if (idx > maxPhaseIdx) maxPhaseIdx = idx;
-        });
-        drillDown.max_phase = maxPhaseIdx >= 0 ? phaseOrder[maxPhaseIdx] : 'N/A';
+      try {
+        const ctUrl = `https://clinicaltrials.gov/api/v2/studies?query.cond=${encodeURIComponent(
+          diseaseName
+        )}&query.term=${encodeURIComponent(symbol)}&pageSize=100&countTotal=true`;
 
-        const activeStatuses = ['RECRUITING', 'ACTIVE_NOT_RECRUITING', 'ENROLLING_BY_INVITATION', 'NOT_YET_RECRUITING'];
-        drillDown.active_trial_present = studies.some((s: any) => 
-          activeStatuses.includes(s.protocolSection?.statusModule?.overallStatus)
-        );
+        const ctRes = await fetch(ctUrl);
+
+        if (ctRes.ok) {
+          const ctData = await ctRes.json();
+          const studies = ctData.studies || [];
+
+          // 1. Trial count
+          drillDown.trial_count = ctData.totalCount ?? studies.length;
+
+          // 2. Max phase
+          const phaseOrder = ['EARLY_PHASE1', 'PHASE1', 'PHASE2', 'PHASE3', 'PHASE4'];
+          let maxPhaseIdx = -1;
+
+          studies.forEach((s: any) => {
+            const phases = s.protocolSection?.designModule?.phases || [];
+            phases.forEach((p: string) => {
+              const idx = phaseOrder.indexOf(p);
+              if (idx > maxPhaseIdx) maxPhaseIdx = idx;
+            });
+          });
+
+          drillDown.max_phase = maxPhaseIdx >= 0 ? phaseOrder[maxPhaseIdx] : 'N/A';
+
+          // 3. Active trial present
+          const activeStatuses = [
+            'RECRUITING',
+            'ACTIVE_NOT_RECRUITING',
+            'ENROLLING_BY_INVITATION'
+          ];
+
+          drillDown.active_trial_present = studies.some((s: any) =>
+            activeStatuses.includes(s.protocolSection?.statusModule?.overallStatus)
+          );
+        }
+      } catch (err) {
+        console.error('ClinicalTrials fetch failed:', err);
       }
 
       // 2. Europe PMC
