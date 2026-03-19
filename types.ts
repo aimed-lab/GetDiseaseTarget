@@ -27,6 +27,7 @@ export interface Target {
   targetScore: number; 
   pathways: Pathway[];
   drillDown?: DrillDownData;
+  usefulness?: Record<string, 'useful' | 'not-useful' | 'pinned'>;
   x?: number;
   y?: number;
   vx?: number;

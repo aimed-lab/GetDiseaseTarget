@@ -54,7 +54,11 @@ import {
   ArrowUpDown,
   HelpCircle,
   X,
-  FileDown
+  FileDown,
+  ThumbsUp,
+  ThumbsDown,
+  Pin,
+  Trash2
 } from 'lucide-react';
 
 import { 
@@ -616,20 +620,160 @@ const RawDataView = ({ targets, theme, cancerType }: { targets: Target[], theme:
   );
 };
 
-const DrugLandscape = ({ targetId, theme }: { targetId: string, theme: Theme }) => {
+const DrugLandscape = ({ 
+  targetId, 
+  symbol, 
+  theme, 
+  currentStatus, 
+  onToggle 
+}: { 
+  targetId: string, 
+  symbol: string, 
+  theme: Theme, 
+  currentStatus?: 'useful' | 'not-useful' | 'pinned', 
+  onToggle: (symbol: string, source: string, status: 'useful' | 'not-useful' | 'pinned') => void 
+}) => {
   const [drugs, setDrugs] = useState<DrugInfo[]>([]); const [loading, setLoading] = useState(false);
   useEffect(() => { let active = true; const fetch = async () => { setLoading(true); const res = await api.getTargetDrugs(targetId); if (active) { setDrugs(res); setLoading(false); } }; fetch(); return () => { active = false; }; }, [targetId]);
   if (loading) return <div className="flex items-center gap-3 py-4"><Loader2 className="w-4 h-4 animate-spin text-blue-500" /><span className="text-[11px] font-medium text-neutral-500">Mapping clinical pipeline...</span></div>;
   if (drugs.length === 0) return null;
-  return (<div className="space-y-5"><div className="flex items-center gap-2"><Pill className="w-4 h-4 text-neutral-500" /><h4 className="text-[11px] font-bold uppercase text-neutral-600 dark:text-neutral-500">Pipeline Evidence</h4></div><div className="space-y-3">{drugs.slice(0, 4).map(d => (<div key={d.id} className={`p-4 rounded-lg border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-neutral-50 border-neutral-200 shadow-sm'}`}><div className="flex items-center justify-between mb-3"><span className="text-[11px] font-bold text-blue-600 dark:text-blue-500 uppercase">{d.name}</span><span className="text-[9px] font-bold text-neutral-500 dark:text-neutral-400 uppercase">PHASE {d.phase}</span></div><PipelineProgress phase={d.phase} /><p className={`text-[11px] leading-relaxed italic mt-3 ${theme === 'dark' ? 'text-neutral-400' : 'text-neutral-700'}`}>{d.mechanism}</p></div>))}</div></div>);
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Pill className="w-4 h-4 text-neutral-500" />
+          <h4 className="text-[11px] font-bold uppercase text-neutral-600 dark:text-neutral-500">Pipeline Evidence</h4>
+        </div>
+        <UsefulnessControls 
+          symbol={symbol} 
+          source="clinical" 
+          currentStatus={currentStatus} 
+          onToggle={onToggle} 
+          theme={theme} 
+        />
+      </div>
+      <div className="space-y-3">
+        {drugs.slice(0, 4).map(d => (
+          <div key={d.id} className={`p-4 rounded-lg border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-neutral-50 border-neutral-200 shadow-sm'}`}>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[11px] font-bold text-blue-600 dark:text-blue-500 uppercase">{d.name}</span>
+              <span className="text-[9px] font-bold text-neutral-500 dark:text-neutral-400 uppercase">PHASE {d.phase}</span>
+            </div>
+            <PipelineProgress phase={d.phase} />
+            <p className={`text-[11px] leading-relaxed italic mt-3 ${theme === 'dark' ? 'text-neutral-400' : 'text-neutral-700'}`}>{d.mechanism}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 };
 
-const LiteratureStats = ({ symbol, diseaseName, theme }: { symbol: string, diseaseName: string, theme: Theme }) => {
+const LiteratureStats = ({ 
+  symbol, 
+  diseaseName, 
+  theme, 
+  currentStatus, 
+  onToggle 
+}: { 
+  symbol: string, 
+  diseaseName: string, 
+  theme: Theme, 
+  currentStatus?: 'useful' | 'not-useful' | 'pinned', 
+  onToggle: (symbol: string, source: string, status: 'useful' | 'not-useful' | 'pinned') => void 
+}) => {
   const [stats, setStats] = useState<PubMedStats | null>(null); const [loading, setLoading] = useState(false);
   useEffect(() => { let active = true; const fetch = async () => { setLoading(true); const res = await api.getPubMedStats(symbol, diseaseName); if (active) { setStats(res); setLoading(false); } }; fetch(); return () => { active = false; }; }, [symbol, diseaseName]);
   if (loading) return <div className="flex items-center gap-3 py-6"><Loader2 className="w-4 h-4 animate-spin text-blue-500" /><span className="text-[11px] font-medium text-neutral-500">Retrieving PubMed analytics...</span></div>;
   if (!stats) return null;
-  return (<div className="space-y-6"><div className="flex items-center justify-between"><div className="flex items-center gap-2"><BookOpen className="w-4 h-4 text-neutral-500" /><h4 className="text-[11px] font-bold uppercase text-neutral-600 dark:text-neutral-500">Clinical Publications</h4></div><a href={stats.searchLink} target="_blank" rel="noopener noreferrer" className="text-[10px] font-bold text-blue-600 hover:underline flex items-center gap-1">ANALYSIS <ExternalLink className="w-3 h-3" /></a></div><div className="grid grid-cols-2 gap-3"><div className={`p-4 rounded-lg border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-neutral-50 border-neutral-200 shadow-sm'}`}><div className="text-[9px] font-bold text-neutral-500 dark:text-neutral-400 uppercase mb-1">Total Signals</div><div className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-neutral-900'}`}>{stats.total.toLocaleString()}</div></div><a href={stats.primarySearchLink} target="_blank" rel="noopener noreferrer" className={`p-4 rounded-lg border block hover:bg-blue-100/50 transition-colors ${theme === 'dark' ? 'bg-blue-900/5 border-blue-500/20' : 'bg-blue-50 border-blue-100 shadow-sm'}`}><div className="flex items-center justify-between mb-1"><div className="text-[9px] font-bold text-blue-600 dark:text-blue-500 uppercase">Recent (2024-25)</div><ExternalLink className="w-2.5 h-2.5 text-blue-400" /></div><div className="text-lg font-bold text-blue-700 dark:text-blue-400">{stats.recent.toLocaleString()}</div></a></div><div className={`p-4 rounded-lg border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-neutral-50 border-neutral-200 shadow-sm'}`}><div className="flex items-center justify-between mb-2"><span className="text-[9px] font-bold uppercase text-neutral-500 dark:text-neutral-400">Signal Velocity</span><Activity className="w-3 h-3 text-blue-500" /></div><PublicationSparkline recent={stats.recent} total={stats.total} theme={theme} /></div><div className="space-y-3">{stats.topPapers.map(p => (<a key={p.id} href={`https://pubmed.ncbi.nlm.nih.gov/${p.id}/`} target="_blank" rel="noopener noreferrer" className={`block p-4 rounded-lg border transition-all hover:bg-neutral-100 dark:hover:bg-neutral-800/50 ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}><p className={`text-[11px] font-medium leading-relaxed mb-2 line-clamp-2 ${theme === 'dark' ? 'text-neutral-300' : 'text-neutral-800'}`}>{p.title}</p><div className="text-[9px] font-mono text-neutral-500 uppercase tracking-wider">PMID {p.id}</div></a>))}</div></div>);
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <BookOpen className="w-4 h-4 text-neutral-500" />
+          <h4 className="text-[11px] font-bold uppercase text-neutral-600 dark:text-neutral-500">Clinical Publications</h4>
+        </div>
+        <UsefulnessControls 
+          symbol={symbol} 
+          source="literature" 
+          currentStatus={currentStatus} 
+          onToggle={onToggle} 
+          theme={theme} 
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className={`p-4 rounded-lg border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-neutral-50 border-neutral-200 shadow-sm'}`}>
+          <div className="text-[9px] font-bold text-neutral-500 dark:text-neutral-400 uppercase mb-1">Total Signals</div>
+          <div className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-neutral-900'}`}>{stats.total.toLocaleString()}</div>
+        </div>
+        <a href={stats.primarySearchLink} target="_blank" rel="noopener noreferrer" className={`p-4 rounded-lg border block hover:bg-blue-100/50 transition-colors ${theme === 'dark' ? 'bg-blue-900/5 border-blue-500/20' : 'bg-blue-50 border-blue-100 shadow-sm'}`}>
+          <div className="flex items-center justify-between mb-1">
+            <div className="text-[9px] font-bold text-blue-600 dark:text-blue-500 uppercase">Recent (2024-25)</div>
+            <ExternalLink className="w-2.5 h-2.5 text-blue-400" />
+          </div>
+          <div className="text-lg font-bold text-blue-700 dark:text-blue-400">{stats.recent.toLocaleString()}</div>
+        </a>
+      </div>
+      <div className={`p-4 rounded-lg border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-neutral-50 border-neutral-200 shadow-sm'}`}>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[9px] font-bold uppercase text-neutral-500 dark:text-neutral-400">Signal Velocity</span>
+          <Activity className="w-3 h-3 text-blue-500" />
+        </div>
+        <PublicationSparkline recent={stats.recent} total={stats.total} theme={theme} />
+      </div>
+      <div className="space-y-3">
+        {stats.topPapers.map(p => (
+          <a key={p.id} href={`https://pubmed.ncbi.nlm.nih.gov/${p.id}/`} target="_blank" rel="noopener noreferrer" className={`block p-4 rounded-lg border transition-all hover:bg-neutral-100 dark:hover:bg-neutral-800/50 ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}>
+            <p className={`text-[11px] font-medium leading-relaxed mb-2 line-clamp-2 ${theme === 'dark' ? 'text-neutral-300' : 'text-neutral-800'}`}>{p.title}</p>
+            <div className="text-[9px] font-mono text-neutral-500 uppercase tracking-wider">PMID {p.id}</div>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const UsefulnessControls = ({ 
+  symbol, 
+  source, 
+  currentStatus, 
+  onToggle, 
+  theme 
+}: { 
+  symbol: string; 
+  source: string; 
+  currentStatus?: 'useful' | 'not-useful' | 'pinned'; 
+  onToggle: (symbol: string, source: string, status: 'useful' | 'not-useful' | 'pinned') => void;
+  theme: Theme;
+}) => {
+  const isPinned = currentStatus === 'pinned';
+  
+  return (
+    <div className="flex items-center gap-1 mt-2">
+      <button
+        onClick={(e) => { e.stopPropagation(); onToggle(symbol, source, 'pinned'); }}
+        className={`p-1.5 rounded-md transition-all group ${
+          isPinned 
+            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' 
+            : 'hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400'
+        }`}
+        title="Pin to Top"
+      >
+        <Pin className={`w-3.5 h-3.5 ${isPinned ? 'fill-current' : 'group-hover:text-blue-500'}`} />
+      </button>
+      <button
+        onClick={(e) => { e.stopPropagation(); if (!isPinned) onToggle(symbol, source, 'not-useful'); }}
+        disabled={isPinned}
+        className={`p-1.5 rounded-md transition-all group relative ${
+          currentStatus === 'not-useful' 
+            ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 ring-2 ring-rose-500/50 shadow-[0_0_10px_rgba(244,63,94,0.5)]' 
+            : isPinned ? 'opacity-20 cursor-not-allowed text-neutral-300' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400'
+        }`}
+        title={isPinned ? "Cannot delete pinned information" : "Delete Information"}
+      >
+        <Trash2 className={`w-3.5 h-3.5 ${currentStatus === 'not-useful' ? 'fill-current' : 'group-hover:text-rose-500'}`} />
+      </button>
+    </div>
+  );
 };
 
 const App = () => {
@@ -678,6 +822,25 @@ const App = () => {
       setDrillDownLoading(null);
     }
     setExpandedGene(symbol);
+  };
+  
+  const toggleUsefulness = (symbol: string, source: string, status: 'useful' | 'not-useful' | 'pinned') => {
+    setResearchState(prev => ({
+      ...prev,
+      targets: prev.targets.map(t => {
+        if (t.symbol === symbol) {
+          const currentStatus = t.usefulness?.[source];
+          const newUsefulness = { ...(t.usefulness || {}) };
+          if (currentStatus === status) {
+            delete newUsefulness[source];
+          } else {
+            newUsefulness[source] = status;
+          }
+          return { ...t, usefulness: newUsefulness };
+        }
+        return t;
+      })
+    }));
   };
 
   const exportToNotion = async () => {
@@ -743,19 +906,42 @@ const App = () => {
                     shading: { fill: "E0E0E0" }
                   })),
                 }),
-                ...researchState.targets.slice(0, 100).map(target => new TableRow({
-                  children: [
-                    target.symbol,
-                    (target.geneticScore || 0).toFixed(3),
-                    (target.combinedExpression || 0).toFixed(3),
-                    (target.targetScore || 0).toFixed(3),
-                    (target.overallScore || 0).toFixed(3)
-                  ].map(text => new TableCell({
-                    children: [new Paragraph({ text, alignment: AlignmentType.CENTER })],
+                ...researchState.targets
+                  .filter(t => !t.usefulness || !Object.values(t.usefulness).includes('not-useful'))
+                  .slice(0, 100)
+                  .map(target => new TableRow({
+                    children: [
+                      target.symbol,
+                      (target.geneticScore || 0).toFixed(3),
+                      (target.combinedExpression || 0).toFixed(3),
+                      (target.targetScore || 0).toFixed(3),
+                      (target.overallScore || 0).toFixed(3)
+                    ].map(text => new TableCell({
+                      children: [new Paragraph({ text, alignment: AlignmentType.CENTER })],
+                    })),
                   })),
-                })),
               ],
             }),
+            ...researchState.targets
+              .filter(t => t.usefulness && Object.values(t.usefulness).includes('useful'))
+              .slice(0, 20)
+              .map(target => [
+                new Paragraph({
+                  text: `Supporting Evidence: ${target.symbol}`,
+                  heading: HeadingLevel.HEADING_2,
+                  spacing: { before: 400, after: 200 },
+                }),
+                new Paragraph({
+                  text: `The following evidence sources were prioritized as useful for this target:`,
+                  spacing: { after: 100 },
+                }),
+                ...Object.entries(target.usefulness || {})
+                  .filter(([_, status]) => status === 'useful')
+                  .map(([source]) => new Paragraph({
+                    text: `${source.charAt(0).toUpperCase() + source.slice(1)} Intelligence`,
+                    bullet: { level: 0 }
+                  }))
+              ]).flat(),
           ],
         }],
       });
@@ -779,7 +965,8 @@ const App = () => {
   
   const displayTargets = useMemo(() => {
     let result = [...researchState.targets];
-    
+
+
     // Apply filters
     if (researchState.filters && researchState.filters.length > 0) {
       const fieldMapping: Record<string, string> = {
@@ -835,19 +1022,25 @@ const App = () => {
     }
 
     // Apply sorts
-    if (researchState.sorts && researchState.sorts.length > 0) {
-      const fieldMapping: Record<string, string> = {
-        'genetic_score': 'geneticScore',
-        'literature_score': 'literatureScore',
-        'clinical_score': 'clinicalScore',
-        'novelty_score': 'noveltyScore',
-        'expression_score': 'combinedExpression',
-        'target_score': 'targetScore',
-        'overall_score': 'overallScore'
-      };
-      const phaseMap: Record<string, number> = { 'N/A': 0, 'EARLY_PHASE1': 1, 'PHASE1': 2, 'PHASE2': 3, 'PHASE3': 4, 'PHASE4': 5 };
+    result.sort((a, b) => {
+      // Primary sort: Pinned targets first
+      const aPinned = Object.values(a.usefulness || {}).some(v => v === 'pinned');
+      const bPinned = Object.values(b.usefulness || {}).some(v => v === 'pinned');
+      if (aPinned && !bPinned) return -1;
+      if (!aPinned && bPinned) return 1;
 
-      result.sort((a, b) => {
+      if (researchState.sorts && researchState.sorts.length > 0) {
+        const fieldMapping: Record<string, string> = {
+          'genetic_score': 'geneticScore',
+          'literature_score': 'literatureScore',
+          'clinical_score': 'clinicalScore',
+          'novelty_score': 'noveltyScore',
+          'expression_score': 'combinedExpression',
+          'target_score': 'targetScore',
+          'overall_score': 'overallScore'
+        };
+        const phaseMap: Record<string, number> = { 'N/A': 0, 'EARLY_PHASE1': 1, 'PHASE1': 2, 'PHASE2': 3, 'PHASE3': 4, 'PHASE4': 5 };
+
         for (const s of researchState.sorts) {
           const internalField = fieldMapping[s.field] || s.field;
           let valA = (a as any)[internalField];
@@ -870,9 +1063,11 @@ const App = () => {
             return s.direction === 'desc' ? strB.localeCompare(strA) : strA.localeCompare(strB);
           }
         }
-        return 0;
-      });
-    }
+      }
+
+      // Default fallback sort: overallScore desc
+      return b.overallScore - a.overallScore;
+    });
 
     return result;
   }, [researchState.targets, researchState.filters, researchState.sorts]);
@@ -1531,29 +1726,72 @@ const App = () => {
                   {viewMode === 'list' && (
                     <div className="h-full flex flex-col">
                       <div className="flex items-center justify-between p-4 border-b border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/20">
-                        <h3 className="text-[11px] font-bold uppercase text-black dark:text-neutral-400 tracking-wider">Target Prioritization List</h3>
-                        <div className="relative">
-                          <button 
-                            onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
-                            disabled={isExporting || !researchState.targets.length}
-                            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all shadow-sm ${isExporting || !researchState.targets.length ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
-                          >
-                            {isExporting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Share2 className="w-3 h-3" />}
-                            Export
-                            <ChevronDown className={`w-3 h-3 transition-transform ${isExportDropdownOpen ? 'rotate-180' : ''}`} />
-                          </button>
-                          {isExportDropdownOpen && (
-                            <div className="absolute right-0 mt-2 w-44 rounded-xl border bg-white dark:bg-[#171717] border-neutral-200 dark:border-neutral-800 shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in duration-200">
-                              <button onClick={() => { exportToNotion(); setIsExportDropdownOpen(false); }} className="w-full px-4 py-3 text-left text-[11px] font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800 flex items-center gap-3 border-b border-neutral-100 dark:border-neutral-800 transition-colors text-neutral-700 dark:text-neutral-300">
-                                <div className="p-1.5 rounded-md bg-neutral-100 dark:bg-neutral-800"><Database className="w-3.5 h-3.5 text-neutral-500" /></div>
-                                <span>Notion</span>
-                              </button>
-                              <button onClick={() => { exportToDocx(); setIsExportDropdownOpen(false); }} className="w-full px-4 py-3 text-left text-[11px] font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800 flex items-center gap-3 transition-colors text-neutral-700 dark:text-neutral-300">
-                                <div className="p-1.5 rounded-md bg-blue-50 dark:bg-blue-900/20"><FileDown className="w-3.5 h-3.5 text-blue-500" /></div>
-                                <span>Download DOCX</span>
-                              </button>
+                        <div className="flex flex-col gap-1.5">
+                          <h3 className="text-[11px] font-bold uppercase text-black dark:text-neutral-400 tracking-wider">Target Prioritization List</h3>
+                          {(researchState.filters.length > 0 || activeCancerType) && (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-tight">Active decision filters:</span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {activeCancerType && (
+                                  <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-[9px] font-bold text-blue-600 dark:text-blue-400 uppercase">
+                                    Cohort = {activeCancerType} all patients
+                                  </div>
+                                )}
+                                {researchState.filters.map((f, idx) => {
+                                  let label = "";
+                                  if (f.field === 'active_trial_present' && f.boolValue === true) label = "Active trials preferred";
+                                  else if (f.field === 'clinical_score' && f.operator === '>' && f.value === 0) label = "Clinical score > 0";
+                                  else {
+                                    const field = f.field.replace(/_/g, ' ');
+                                    const val = f.boolValue !== undefined ? (f.boolValue ? 'YES' : 'NO') : (f.stringValue !== undefined ? f.stringValue : (f.value2 !== undefined ? `${f.value}-${f.value2}` : f.value));
+                                    label = `${field} ${f.operator} ${val}`;
+                                  }
+                                  return (
+                                    <div key={idx} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[9px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">
+                                      {label}
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
                           )}
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <button 
+                            onClick={() => {
+                              setResearchState(prev => ({
+                                ...prev,
+                                targets: prev.targets.map(t => ({ ...t, usefulness: {} }))
+                              }));
+                            }}
+                            className="flex items-center gap-2 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all shadow-sm bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            Reset Metrics
+                          </button>
+                          <div className="relative">
+                            <button 
+                              onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
+                              disabled={isExporting || !researchState.targets.length}
+                              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all shadow-sm ${isExporting || !researchState.targets.length ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                            >
+                              {isExporting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Share2 className="w-3 h-3" />}
+                              Export
+                              <ChevronDown className={`w-3 h-3 transition-transform ${isExportDropdownOpen ? 'rotate-180' : ''}`} />
+                            </button>
+                            {isExportDropdownOpen && (
+                              <div className="absolute right-0 mt-2 w-44 rounded-xl border bg-white dark:bg-[#171717] border-neutral-200 dark:border-neutral-800 shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in duration-200">
+                                <button onClick={() => { exportToNotion(); setIsExportDropdownOpen(false); }} className="w-full px-4 py-3 text-left text-[11px] font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800 flex items-center gap-3 border-b border-neutral-100 dark:border-neutral-800 transition-colors text-neutral-700 dark:text-neutral-300">
+                                  <div className="p-1.5 rounded-md bg-neutral-100 dark:bg-neutral-800"><Database className="w-3.5 h-3.5 text-neutral-500" /></div>
+                                  <span>Notion</span>
+                                </button>
+                                <button onClick={() => { exportToDocx(); setIsExportDropdownOpen(false); }} className="w-full px-4 py-3 text-left text-[11px] font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800 flex items-center gap-3 transition-colors text-neutral-700 dark:text-neutral-300">
+                                  <div className="p-1.5 rounded-md bg-blue-50 dark:bg-blue-900/20"><FileDown className="w-3.5 h-3.5 text-blue-500" /></div>
+                                  <span>Download DOCX</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                       <div className="flex-1 overflow-auto relative">
@@ -1727,9 +1965,17 @@ const App = () => {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-                            {displayTargets.map(t => (
-                              <React.Fragment key={t.id}>
-                                <tr onClick={()=>setResearchState(p=>({...p, focusSymbol: t.symbol}))} className={`cursor-pointer transition-colors hover:bg-blue-50/30 dark:hover:bg-neutral-800/20 ${researchState.focusSymbol === t.symbol ? 'bg-blue-100/30 dark:bg-blue-900/10' : ''}`}>
+                            {displayTargets.map(t => {
+                              const isRowNotUseful = t.usefulness?.['overall'] === 'not-useful';
+                              const isRowPinned = t.usefulness?.['overall'] === 'pinned';
+                              if (isRowNotUseful) return null;
+
+                              return (
+                                <React.Fragment key={t.id}>
+                                  <tr 
+                                    onClick={()=>setResearchState(p=>({...p, focusSymbol: t.symbol}))} 
+                                    className={`cursor-pointer transition-all hover:bg-blue-50/30 dark:hover:bg-neutral-800/20 ${researchState.focusSymbol === t.symbol ? 'bg-blue-100/30 dark:bg-blue-900/10' : ''} ${isRowPinned ? 'ring-2 ring-inset ring-blue-500/50 bg-blue-50/10 dark:bg-blue-900/5' : ''}`}
+                                  >
                                   <td className="p-4 text-center">
                                     <button 
                                       onClick={(e) => { e.stopPropagation(); handleDrillDown(t.symbol); }}
@@ -1754,6 +2000,22 @@ const App = () => {
                                 {expandedGene === t.symbol && (
                                   <tr className={`${theme === 'dark' ? 'bg-[#0d0d0d]' : 'bg-neutral-50/50'}`}>
                                     <td colSpan={10} className="p-6">
+                                      <div className="flex items-center justify-between mb-6 pb-4 border-b border-neutral-100 dark:border-neutral-800">
+                                        <div className="flex items-center gap-3">
+                                          <div className="p-2 rounded-xl bg-blue-50 dark:bg-blue-900/20"><DatabaseZap className="w-5 h-5 text-blue-600" /></div>
+                                          <h3 className="text-lg font-bold tracking-tight text-neutral-800 dark:text-neutral-200">Evidence Prioritization for {t.symbol}</h3>
+                                        </div>
+                                        <div className="flex items-center gap-4">
+                                          <span className="text-[10px] font-bold uppercase text-neutral-400 tracking-widest">Gene Row Priority</span>
+                                          <UsefulnessControls 
+                                            symbol={t.symbol} 
+                                            source="overall" 
+                                            currentStatus={t.usefulness?.['overall']} 
+                                            onToggle={toggleUsefulness} 
+                                            theme={theme} 
+                                          />
+                                        </div>
+                                      </div>
                                       {drillDownLoading === t.symbol ? (
                                         <div className="flex items-center justify-center py-8 gap-3">
                                           <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
@@ -1762,83 +2024,116 @@ const App = () => {
                                       ) : t.drillDown ? (
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-top-2 duration-300">
                                           {/* Clinical Trials Section */}
-                                          <div className={`p-5 rounded-2xl border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}>
-                                            <div className="flex items-center gap-2 mb-4">
-                                              <div className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-900/20"><Stethoscope className="w-4 h-4 text-rose-500" /></div>
-                                              <h4 className="text-[11px] font-bold uppercase text-neutral-500 tracking-wider">ClinicalTrials.gov</h4>
-                                            </div>
-                                            <div className="space-y-4">
-                                              <div className="flex justify-between items-end">
-                                                <span className="text-[10px] font-bold text-neutral-400 uppercase">Trial Count</span>
-                                                <span className="text-xl font-black text-rose-600">{t.drillDown.trial_count}</span>
+                                          {(t.usefulness?.['clinical'] === 'not-useful') ? null : (
+                                            <div className={`p-5 rounded-2xl border transition-all ${t.usefulness?.['clinical'] === 'pinned' ? 'border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/5 dark:bg-blue-900/5' : (theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm')}`}>
+                                              <div className="flex items-center justify-between mb-4">
+                                                <div className="flex items-center gap-2">
+                                                  <div className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-900/20"><Stethoscope className="w-4 h-4 text-rose-500" /></div>
+                                                  <h4 className="text-[11px] font-bold uppercase text-neutral-500 tracking-wider">ClinicalTrials.gov</h4>
+                                                </div>
+                                                <UsefulnessControls 
+                                                  symbol={t.symbol} 
+                                                  source="clinical" 
+                                                  currentStatus={t.usefulness?.['clinical']} 
+                                                  onToggle={toggleUsefulness} 
+                                                  theme={theme} 
+                                                />
                                               </div>
-                                              <div className="flex justify-between items-end">
-                                                <span className="text-[10px] font-bold text-neutral-400 uppercase">Max Phase</span>
-                                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${theme === 'dark' ? 'bg-rose-900/30 text-rose-400' : 'bg-rose-50 text-rose-700'}`}>{t.drillDown.max_phase}</span>
-                                              </div>
-                                              <div className="flex justify-between items-center">
-                                                <span className="text-[10px] font-bold text-neutral-400 uppercase">Active Trials</span>
-                                                <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold ${t.drillDown.active_trial_present ? (theme === 'dark' ? 'bg-emerald-900/30 text-emerald-400' : 'bg-emerald-50 text-emerald-700') : (theme === 'dark' ? 'bg-neutral-800 text-neutral-500' : 'bg-neutral-100 text-neutral-500')}`}>
-                                                  <div className={`w-1.5 h-1.5 rounded-full ${t.drillDown.active_trial_present ? 'bg-emerald-500 animate-pulse' : 'bg-neutral-400'}`} />
-                                                  {t.drillDown.active_trial_present ? 'PRESENT' : 'NONE'}
+                                              <div className="space-y-4">
+                                                <div className="flex justify-between items-end">
+                                                  <span className="text-[10px] font-bold text-neutral-400 uppercase">Trial Count</span>
+                                                  <span className="text-xl font-black text-rose-600">{t.drillDown.trial_count}</span>
+                                                </div>
+                                                <div className="flex justify-between items-end">
+                                                  <span className="text-[10px] font-bold text-neutral-400 uppercase">Max Phase</span>
+                                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${theme === 'dark' ? 'bg-rose-900/30 text-rose-400' : 'bg-rose-50 text-rose-700'}`}>{t.drillDown.max_phase}</span>
+                                                </div>
+                                                <div className="flex justify-between items-center">
+                                                  <span className="text-[10px] font-bold text-neutral-400 uppercase">Active Trials</span>
+                                                  <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold ${t.drillDown.active_trial_present ? (theme === 'dark' ? 'bg-emerald-900/30 text-emerald-400' : 'bg-emerald-50 text-emerald-700') : (theme === 'dark' ? 'bg-neutral-800 text-neutral-500' : 'bg-neutral-100 text-neutral-500')}`}>
+                                                    <div className={`w-1.5 h-1.5 rounded-full ${t.drillDown.active_trial_present ? 'bg-emerald-500 animate-pulse' : 'bg-neutral-400'}`} />
+                                                    {t.drillDown.active_trial_present ? 'PRESENT' : 'NONE'}
+                                                  </div>
                                                 </div>
                                               </div>
                                             </div>
-                                          </div>
+                                          )}
 
                                           {/* Literature Section */}
-                                          <div className={`p-5 rounded-2xl border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}>
-                                            <div className="flex items-center gap-2 mb-4">
-                                              <div className="p-1.5 rounded-lg bg-purple-50 dark:bg-purple-900/20"><BookOpen className="w-4 h-4 text-purple-500" /></div>
-                                              <h4 className="text-[11px] font-bold uppercase text-neutral-500 tracking-wider">Europe PMC Literature</h4>
+                                          {(t.usefulness?.['literature'] === 'not-useful') ? null : (
+                                            <div className={`p-5 rounded-2xl border transition-all ${t.usefulness?.['literature'] === 'pinned' ? 'border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/5 dark:bg-blue-900/5' : (theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm')}`}>
+                                              <div className="flex items-center justify-between mb-4">
+                                                <div className="flex items-center gap-2">
+                                                  <div className="p-1.5 rounded-lg bg-purple-50 dark:bg-purple-900/20"><BookOpen className="w-4 h-4 text-purple-500" /></div>
+                                                  <h4 className="text-[11px] font-bold uppercase text-neutral-500 tracking-wider">Europe PMC Literature</h4>
+                                                </div>
+                                                <UsefulnessControls 
+                                                  symbol={t.symbol} 
+                                                  source="literature" 
+                                                  currentStatus={t.usefulness?.['literature']} 
+                                                  onToggle={toggleUsefulness} 
+                                                  theme={theme} 
+                                                />
+                                              </div>
+                                              <div className="space-y-4">
+                                                <div className="flex justify-between items-end">
+                                                  <span className="text-[10px] font-bold text-neutral-400 uppercase">Paper Count</span>
+                                                  <span className="text-xl font-black text-purple-600">{t.drillDown.paper_count.toLocaleString()}</span>
+                                                </div>
+                                                <div className="flex justify-between items-end">
+                                                  <span className="text-[10px] font-bold text-neutral-400 uppercase">Recent (3y)</span>
+                                                  <span className="text-lg font-bold text-purple-500">{t.drillDown.recent_paper_count.toLocaleString()}</span>
+                                                </div>
+                                                <div className="flex justify-between items-end">
+                                                  <span className="text-[10px] font-bold text-neutral-400 uppercase">Latest Pub</span>
+                                                  <span className="text-[11px] font-mono font-bold text-neutral-600 dark:text-neutral-400">{t.drillDown.latest_publication_date}</span>
+                                                </div>
+                                              </div>
                                             </div>
-                                            <div className="space-y-4">
-                                              <div className="flex justify-between items-end">
-                                                <span className="text-[10px] font-bold text-neutral-400 uppercase">Paper Count</span>
-                                                <span className="text-xl font-black text-purple-600">{t.drillDown.paper_count.toLocaleString()}</span>
-                                              </div>
-                                              <div className="flex justify-between items-end">
-                                                <span className="text-[10px] font-bold text-neutral-400 uppercase">Recent (3y)</span>
-                                                <span className="text-lg font-bold text-purple-500">{t.drillDown.recent_paper_count.toLocaleString()}</span>
-                                              </div>
-                                              <div className="flex justify-between items-end">
-                                                <span className="text-[10px] font-bold text-neutral-400 uppercase">Latest Pub</span>
-                                                <span className="text-[11px] font-mono font-bold text-neutral-600 dark:text-neutral-400">{t.drillDown.latest_publication_date}</span>
-                                              </div>
-                                            </div>
-                                          </div>
+                                          )}
 
                                           {/* Discovery Potential */}
-                                          <div className={`p-5 rounded-2xl border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}>
-                                            <div className="flex items-center gap-2 mb-4">
-                                              <div className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/20"><Atom className="w-4 h-4 text-indigo-500" /></div>
-                                              <h4 className="text-[11px] font-bold uppercase text-neutral-500 tracking-wider">Discovery Insights</h4>
-                                            </div>
-                                            <div className="space-y-3">
-                                              <p className="text-[11px] text-neutral-600 dark:text-neutral-400 leading-relaxed">
-                                                {t.drillDown.trial_count > 0 ? 
-                                                  `This target has ${t.drillDown.trial_count} clinical studies, reaching ${t.drillDown.max_phase}.` : 
-                                                  "No clinical trials found for this specific gene-disease pair in ClinicalTrials.gov."
-                                                }
-                                              </p>
-                                              <p className="text-[11px] text-neutral-600 dark:text-neutral-400 leading-relaxed">
-                                                {t.drillDown.recent_paper_count > 5 ? 
-                                                  `High research velocity with ${t.drillDown.recent_paper_count} papers in the last 3 years.` : 
-                                                  "Emerging literature support with moderate recent publication activity."
-                                                }
-                                              </p>
-                                              <div className="pt-2">
-                                                <a 
-                                                  href={`https://clinicaltrials.gov/search?cond=${encodeURIComponent(researchState.activeDisease?.name || '')}&term=${encodeURIComponent(t.symbol)}`}
-                                                  target="_blank"
-                                                  rel="noopener noreferrer"
-                                                  className="text-[10px] font-bold text-blue-600 hover:underline flex items-center gap-1"
-                                                >
-                                                  View all trials <ExternalLink className="w-3 h-3" />
-                                                </a>
+                                          {(t.usefulness?.['discovery'] === 'not-useful') ? null : (
+                                            <div className={`p-5 rounded-2xl border transition-all ${t.usefulness?.['discovery'] === 'pinned' ? 'border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/5 dark:bg-blue-900/5' : (theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm')}`}>
+                                              <div className="flex items-center justify-between mb-4">
+                                                <div className="flex items-center gap-2">
+                                                  <div className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/20"><Atom className="w-4 h-4 text-indigo-500" /></div>
+                                                  <h4 className="text-[11px] font-bold uppercase text-neutral-500 tracking-wider">Discovery Insights</h4>
+                                                </div>
+                                                <UsefulnessControls 
+                                                  symbol={t.symbol} 
+                                                  source="discovery" 
+                                                  currentStatus={t.usefulness?.['discovery']} 
+                                                  onToggle={toggleUsefulness} 
+                                                  theme={theme} 
+                                                />
+                                              </div>
+                                              <div className="space-y-3">
+                                                <p className="text-[11px] text-neutral-600 dark:text-neutral-400 leading-relaxed">
+                                                  {t.drillDown.trial_count > 0 ? 
+                                                    `This target has ${t.drillDown.trial_count} clinical studies, reaching ${t.drillDown.max_phase}.` : 
+                                                    "No clinical trials found for this specific gene-disease pair in ClinicalTrials.gov."
+                                                  }
+                                                </p>
+                                                <p className="text-[11px] text-neutral-600 dark:text-neutral-400 leading-relaxed">
+                                                  {t.drillDown.recent_paper_count > 5 ? 
+                                                    `High research velocity with ${t.drillDown.recent_paper_count} papers in the last 3 years.` : 
+                                                    "Emerging literature support with moderate recent publication activity."
+                                                  }
+                                                </p>
+                                                <div className="pt-2">
+                                                  <a 
+                                                    href={`https://clinicaltrials.gov/search?cond=${encodeURIComponent(researchState.activeDisease?.name || '')}&term=${encodeURIComponent(t.symbol)}`}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-[10px] font-bold text-blue-600 hover:underline flex items-center gap-1"
+                                                  >
+                                                    View all trials <ExternalLink className="w-3 h-3" />
+                                                  </a>
+                                                </div>
                                               </div>
                                             </div>
-                                          </div>
+                                          )}
                                         </div>
                                       ) : (
                                         <div className="text-center py-8 text-neutral-500 text-[11px] font-bold uppercase tracking-widest">Failed to load drill down data.</div>
@@ -1847,8 +2142,9 @@ const App = () => {
                                   </tr>
                                 )}
                               </React.Fragment>
-                            ))}
-                          </tbody>
+                            );
+                          })}
+                        </tbody>
                         </table>
                         {researchState.activeDisease && (
                           <div className="p-8 flex flex-col items-center gap-4 border-t border-neutral-100 dark:border-neutral-800 bg-neutral-50/30 dark:bg-transparent">
@@ -1995,19 +2291,47 @@ const App = () => {
                 <div className="space-y-1">
                   <h3 className="text-5xl font-extrabold text-blue-600 dark:text-blue-500 tracking-tighter">{t.symbol}</h3>
                   <p className={`text-[12px] font-bold uppercase tracking-wide ${theme === 'dark' ? 'text-neutral-500' : 'text-neutral-600'}`}>{t.name}</p>
+                  <UsefulnessControls 
+                    symbol={t.symbol} 
+                    source="overall" 
+                    currentStatus={t.usefulness?.['overall']} 
+                    onToggle={toggleUsefulness} 
+                    theme={theme} 
+                  />
                 </div>
                 <button onClick={() => setIsRightSidebarOpen(false)} className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors" title="Minimize">
                   <ChevronRight className="w-5 h-5 text-neutral-400 hover:text-blue-600" />
                 </button>
               </div>
               <div className="space-y-3">
-                <h4 className="text-[10px] font-bold uppercase text-neutral-500 dark:text-neutral-400 tracking-widest">Molecular Radar</h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-[10px] font-bold uppercase text-neutral-500 dark:text-neutral-400 tracking-widest">Molecular Radar</h4>
+                  <UsefulnessControls 
+                    symbol={t.symbol} 
+                    source="radar" 
+                    currentStatus={t.usefulness?.['radar']} 
+                    onToggle={toggleUsefulness} 
+                    theme={theme} 
+                  />
+                </div>
                 <div className={`p-8 rounded-3xl border shadow-inner ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-neutral-50 border-neutral-200'}`}>
                   <RadarChart target={t} theme={theme} />
                 </div>
               </div>
-              <DrugLandscape targetId={t.id} theme={theme} />
-              <LiteratureStats symbol={t.symbol} diseaseName={researchState.activeDisease?.name || "Evidence"} theme={theme} />
+              <DrugLandscape 
+                targetId={t.id} 
+                symbol={t.symbol}
+                theme={theme} 
+                currentStatus={t.usefulness?.['clinical']}
+                onToggle={toggleUsefulness}
+              />
+              <LiteratureStats 
+                symbol={t.symbol} 
+                diseaseName={researchState.activeDisease?.name || "Evidence"} 
+                theme={theme} 
+                currentStatus={t.usefulness?.['literature']}
+                onToggle={toggleUsefulness}
+              />
             </>) })()}
           </aside>
           {!isRightSidebarOpen && (

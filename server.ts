@@ -42,8 +42,21 @@ async function startServer() {
       const errors = [];
       
       // Export in batches to be safe
-      for (const target of targets.slice(0, 20)) { 
+      const prioritizedTargets = targets
+        .filter((t: any) => !t.usefulness || !Object.values(t.usefulness).includes('not-useful'))
+        .sort((a: any, b: any) => {
+          const aUseful = Object.values(a.usefulness || {}).filter(s => s === 'useful').length;
+          const bUseful = Object.values(b.usefulness || {}).filter(s => s === 'useful').length;
+          return bUseful - aUseful;
+        });
+
+      for (const target of prioritizedTargets.slice(0, 20)) { 
         try {
+          const usefulSources = Object.entries(target.usefulness || {})
+            .filter(([_, status]) => status === 'useful')
+            .map(([source]) => source.charAt(0).toUpperCase() + source.slice(1))
+            .join(", ");
+
           const response = await notion.pages.create({
             parent: { database_id: databaseId },
             properties: {
@@ -64,6 +77,9 @@ async function startServer() {
               },
               Expression: {
                 number: target.combinedExpression || 0,
+              },
+              SupportingEvidence: {
+                rich_text: [{ text: { content: usefulSources || "None" } }],
               }
             },
           });
