@@ -5,11 +5,17 @@ export interface Pathway {
 
 export interface DrillDownData {
   trial_count: number;
+  interventional_count?: number;
   max_phase: string;
   active_trial_present: boolean;
   paper_count: number;
   recent_paper_count: number;
   latest_publication_date: string;
+  phase_breakdown?: Record<string, number>;
+  top_conditions?: { name: string; count: number }[];
+  top_drugs?: { name: string; count: number }[];
+  sponsor_breakdown?: Record<string, number>;
+  clinical_summary?: string;
 }
 
 export interface Target {
@@ -141,6 +147,7 @@ export interface ResearchContext {
   medianOs?: number;
   filters: FilterCondition[];
   sorts: SortCondition[];
+  globalHiddenMetrics?: string[];
 }
 
 export interface Message {

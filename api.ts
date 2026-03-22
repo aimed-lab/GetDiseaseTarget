@@ -220,9 +220,19 @@ export const api = {
     try {
       // 1. ClinicalTrials.gov API v2
       try {
+        const fields = [
+          'protocolSection.identificationModule.nctId',
+          'protocolSection.statusModule.overallStatus',
+          'protocolSection.designModule.phases',
+          'protocolSection.designModule.studyType',
+          'protocolSection.conditionsModule.conditions',
+          'protocolSection.armsInterventionsModule.interventions',
+          'protocolSection.sponsorCollaboratorsModule.leadSponsor.class'
+        ].join(',');
+
         const ctUrl = `https://clinicaltrials.gov/api/v2/studies?query.cond=${encodeURIComponent(
           diseaseName
-        )}&query.term=${encodeURIComponent(symbol)}&pageSize=100&countTotal=true`;
+        )}&query.term=${encodeURIComponent(symbol)}&pageSize=100&countTotal=true&fields=${fields}`;
 
         const ctRes = await fetch(ctUrl);
 
@@ -233,21 +243,63 @@ export const api = {
           // 1. Trial count
           drillDown.trial_count = ctData.totalCount ?? studies.length;
 
-          // 2. Max phase
+          // 2. Filter for Interventional Studies
+          const interventionalStudies = studies.filter((s: any) =>
+            s.protocolSection?.designModule?.studyType === 'INTERVENTIONAL'
+          );
+          drillDown.interventional_count = interventionalStudies.length;
+
+          // 3. Max phase and breakdown (ONLY on interventional studies)
           const phaseOrder = ['EARLY_PHASE1', 'PHASE1', 'PHASE2', 'PHASE3', 'PHASE4'];
           let maxPhaseIdx = -1;
+          const phaseBreakdown: Record<string, number> = { 'EARLY_PHASE1': 0, 'PHASE1': 0, 'PHASE2': 0, 'PHASE3': 0, 'PHASE4': 0 };
+          const conditionsMap: Record<string, number> = {};
+          const drugsMap: Record<string, number> = {};
+          const sponsorMap: Record<string, number> = {};
 
-          studies.forEach((s: any) => {
+          interventionalStudies.forEach((s: any) => {
             const phases = s.protocolSection?.designModule?.phases || [];
             phases.forEach((p: string) => {
               const idx = phaseOrder.indexOf(p);
               if (idx > maxPhaseIdx) maxPhaseIdx = idx;
+              if (phaseBreakdown[p] !== undefined) phaseBreakdown[p]++;
             });
+
+            // Conditions
+            const conds = s.protocolSection?.conditionsModule?.conditions || [];
+            conds.forEach((c: string) => {
+              conditionsMap[c] = (conditionsMap[c] || 0) + 1;
+            });
+
+            // Drugs (Better approach: filter by type)
+            const interventions = s.protocolSection?.armsInterventionsModule?.interventions || [];
+            interventions
+              .filter((i: any) => i.type === 'DRUG' || i.type === 'BIOLOGICAL')
+              .forEach((i: any) => {
+                const name = i.name.trim();
+                drugsMap[name] = (drugsMap[name] || 0) + 1;
+              });
+          });
+
+          // Sponsors (Dynamic calculation on all studies)
+          studies.forEach((s: any) => {
+            const cls = s.protocolSection?.sponsorCollaboratorsModule?.leadSponsor?.class;
+            if (cls) {
+              // normalize FED/U_S_FED → NIH bucket
+              const label = (cls === 'NIH' || cls === 'FED' || cls === 'U_S_FED') 
+                ? 'NIH' 
+                : cls; // INDUSTRY, OTHER, INDIV, NETWORK stay as-is
+              sponsorMap[label] = (sponsorMap[label] || 0) + 1;
+            }
           });
 
           drillDown.max_phase = maxPhaseIdx >= 0 ? phaseOrder[maxPhaseIdx] : 'N/A';
+          drillDown.phase_breakdown = phaseBreakdown;
+          drillDown.top_conditions = Object.entries(conditionsMap).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name, count }));
+          drillDown.top_drugs = Object.entries(drugsMap).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name, count }));
+          drillDown.sponsor_breakdown = sponsorMap;
 
-          // 3. Active trial present
+          // 4. Active trial present
           const activeStatuses = [
             'RECRUITING',
             'ACTIVE_NOT_RECRUITING',
@@ -262,7 +314,29 @@ export const api = {
         console.error('ClinicalTrials fetch failed:', err);
       }
 
-      // 2. Europe PMC
+      // 3. AI Summary
+      try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const prompt = `Based on the following clinical trial data for the gene ${symbol} in the context of ${diseaseName}:
+        - Total Trials: ${drillDown.trial_count}
+        - Max Phase: ${drillDown.max_phase}
+        - Phase Breakdown: ${JSON.stringify(drillDown.phase_breakdown)}
+        - Top Conditions: ${JSON.stringify(drillDown.top_conditions)}
+        - Top Drugs: ${JSON.stringify(drillDown.top_drugs)}
+        - Sponsor Breakdown: ${JSON.stringify(drillDown.sponsor_breakdown)}
+        
+        Generate a concise, professional clinical insight (2-3 sentences). Focus on validation level, commercial interest, and standard-of-care potential. Do not use placeholders.`;
+        
+        const response = await ai.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: prompt,
+        });
+        drillDown.clinical_summary = response.text?.trim();
+      } catch (e) {
+        console.error("AI Clinical Summary failed", e);
+      }
+
+      // 4. Europe PMC
       const currentYear = new Date().getFullYear();
       const threeYearsAgo = currentYear - 3;
       const epQuery = `${symbol} AND "${diseaseName}"`;
