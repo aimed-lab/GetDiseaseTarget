@@ -55,7 +55,7 @@ export const api = {
     return hits.map((h: any) => ({ id: h.id, name: h.name, score: h.score }));
   },
 
-  async getGenes(efoId: string, size: number = 30, page: number = 0): Promise<Target[]> {
+  async getTargets(efoId: string, size: number = 30, page: number = 0): Promise<Target[]> {
     const GQL_QUERY = `
       query GetAssociatedTargets($efoId: String!, $size: Int!, $page: Int!) {
         disease(efoId: $efoId) {

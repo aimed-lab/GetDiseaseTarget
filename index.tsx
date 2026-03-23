@@ -577,7 +577,7 @@ const RawDataView = ({ targets, theme, cancerType }: { targets: Target[], theme:
   const [expressionData, setExpressionData] = useState<ExpressionRow[]>([]);
   const [loadingClinical, setLoadingClinical] = useState(false);
   const [loadingExpression, setLoadingExpression] = useState(false);
-  const [showOnlyGetGenes, setShowOnlyGetGenes] = useState(true);
+  const [showOnlyTargetGenes, setShowOnlyTargetGenes] = useState(true);
   const [offset, setOffset] = useState(0);
   const getTargetSymbols = useMemo(() => new Set(targets.map(t => t.symbol)), [targets]);
   
@@ -604,7 +604,7 @@ const RawDataView = ({ targets, theme, cancerType }: { targets: Target[], theme:
     // Since we need expression for a specific sample, we fetch the target genes
     // and filter for this sample. If "Show All" is selected, we are limited by the API
     // so we'll primarily support the target list genes.
-    const genesToFetch = showOnlyGetGenes ? Array.from(getTargetSymbols) : ['TP53', 'BRCA1', 'EGFR', 'MYC', 'PTEN']; // Fallback small list if not filtered
+    const genesToFetch = showOnlyTargetGenes ? Array.from(getTargetSymbols) : ['TP53', 'BRCA1', 'EGFR', 'MYC', 'PTEN']; // Fallback small list if not filtered
     
     const page = await api.getTcgaExpressionPage(cancerType, genesToFetch, 0);
     const sampleRows = page.items.filter(item => {
@@ -618,7 +618,7 @@ const RawDataView = ({ targets, theme, cancerType }: { targets: Target[], theme:
     setExpressionData(sampleRows); 
     setLoadingExpression(false); 
   };
-  const filteredExpression = useMemo(() => { if (!showOnlyGetGenes) return expressionData; return expressionData.filter(row => getTargetSymbols.has(row.gene_symbol)); }, [expressionData, getTargetSymbols, showOnlyGetGenes]);
+  const filteredExpression = useMemo(() => { if (!showOnlyTargetGenes) return expressionData; return expressionData.filter(row => getTargetSymbols.has(row.gene_symbol)); }, [expressionData, getTargetSymbols, showOnlyTargetGenes]);
   return (
     <div className="h-full flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-neutral-100 dark:divide-neutral-800">
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -626,8 +626,8 @@ const RawDataView = ({ targets, theme, cancerType }: { targets: Target[], theme:
         <div className="flex-1 overflow-auto">{loadingClinical ? (<div className="h-full flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>) : (<table className="w-full text-left"><thead className="sticky top-0 bg-neutral-50 dark:bg-neutral-900 border-b border-neutral-100 dark:border-neutral-800 z-10"><tr><th className="p-4 text-[10px] font-bold text-neutral-600 dark:text-neutral-500 uppercase pl-6">Sample ID</th><th className="p-4 text-[10px] font-bold text-neutral-600 dark:text-neutral-500 uppercase">Type</th><th className="p-4 pr-6 text-right text-[10px] font-bold text-neutral-600 dark:text-neutral-500 uppercase">Status</th></tr></thead><tbody className="divide-y divide-neutral-50 dark:divide-neutral-800">{clinicalData.map(sample => (<tr key={sample.sampleid} onClick={() => handleSelectSample(sample)} className={`cursor-pointer transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-800/50 ${selectedSample?.sampleid === sample.sampleid ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}><td className="p-4 pl-6 font-mono text-[11px] text-blue-600 dark:text-blue-400">{sample.sampleid}</td><td className="p-4 text-[11px] text-neutral-700 dark:text-neutral-400">{sample.vital_status === 'Alive' ? 'Alive' : 'Deceased'}</td><td className={`p-4 pr-6 text-right text-[11px] font-medium ${sample.vital_status === 'Alive' ? 'text-[#EB4236]' : 'text-[#4285F5]'}`}>{sample.vital_status}</td></tr>))}</tbody></table>)}</div>
       </div>
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="p-4 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between"><div className="flex items-center gap-2"><Activity className="w-4 h-4 text-neutral-500" /><span className="text-[12px] font-semibold text-neutral-700 dark:text-neutral-400">Sample Expression</span></div><button onClick={() => setShowOnlyGetGenes(!showOnlyGetGenes)} className={`text-[10px] font-bold px-3 py-1 rounded border transition-colors ${showOnlyGetGenes ? 'bg-blue-500 text-white' : 'text-neutral-500'}`}>{showOnlyGetGenes ? 'FILTERED' : 'ALL'}</button></div>
-        <div className="flex-1 overflow-auto">{!selectedSample ? (<div className="h-full flex flex-col items-center justify-center p-12 text-center text-neutral-400"><DatabaseZap className="w-8 h-8 mb-4 opacity-10" /><p className="text-sm font-medium">Select a patient sample</p></div>) : loadingExpression ? (<div className="h-full flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>) : (<table className="w-full text-left"><thead className="sticky top-0 bg-neutral-50 dark:bg-neutral-900 border-b border-neutral-100 dark:border-neutral-800 z-10"><tr><th className="p-4 text-[10px] font-bold text-neutral-600 dark:text-neutral-500 uppercase pl-6">Gene</th><th className="p-4 text-[10px] font-bold text-neutral-600 dark:text-neutral-500 uppercase text-center">In List</th><th className="p-4 pr-6 text-right text-[10px] font-bold text-neutral-600 dark:text-neutral-500 uppercase">TPM Value</th></tr></thead><tbody className="divide-y divide-neutral-50 dark:divide-neutral-800">{filteredExpression.map(row => { const isGetGene = getTargetSymbols.has(row.gene_symbol); return (<tr key={row.gene_symbol} className={isGetGene ? 'bg-blue-50/20 dark:bg-blue-900/5' : ''}><td className={`p-4 pl-6 font-semibold text-[11px] ${isGetGene ? 'text-blue-600 dark:text-blue-400' : 'text-neutral-600 dark:text-neutral-300'}`}>{row.gene_symbol}</td><td className="p-4 text-center">{isGetGene && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 mx-auto" />}</td><td className="p-4 pr-6 text-right font-mono text-[11px] text-neutral-600 dark:text-neutral-500">{parseFloat(row.value).toFixed(4)}</td></tr>); })}</tbody></table>)}</div>
+        <div className="p-4 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between"><div className="flex items-center gap-2"><Activity className="w-4 h-4 text-neutral-500" /><span className="text-[12px] font-semibold text-neutral-700 dark:text-neutral-400">Sample Expression</span></div><button onClick={() => setShowOnlyTargetGenes(!showOnlyTargetGenes)} className={`text-[10px] font-bold px-3 py-1 rounded border transition-colors ${showOnlyTargetGenes ? 'bg-blue-500 text-white' : 'text-neutral-500'}`}>{showOnlyTargetGenes ? 'FILTERED' : 'ALL'}</button></div>
+        <div className="flex-1 overflow-auto">{!selectedSample ? (<div className="h-full flex flex-col items-center justify-center p-12 text-center text-neutral-400"><DatabaseZap className="w-8 h-8 mb-4 opacity-10" /><p className="text-sm font-medium">Select a patient sample</p></div>) : loadingExpression ? (<div className="h-full flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>) : (<table className="w-full text-left"><thead className="sticky top-0 bg-neutral-50 dark:bg-neutral-900 border-b border-neutral-100 dark:border-neutral-800 z-10"><tr><th className="p-4 text-[10px] font-bold text-neutral-600 dark:text-neutral-500 uppercase pl-6">Gene</th><th className="p-4 text-[10px] font-bold text-neutral-600 dark:text-neutral-500 uppercase text-center">In List</th><th className="p-4 pr-6 text-right text-[10px] font-bold text-neutral-600 dark:text-neutral-500 uppercase">TPM Value</th></tr></thead><tbody className="divide-y divide-neutral-50 dark:divide-neutral-800">{filteredExpression.map(row => { const isTargetGene = getTargetSymbols.has(row.gene_symbol); return (<tr key={row.gene_symbol} className={isTargetGene ? 'bg-blue-50/20 dark:bg-blue-900/5' : ''}><td className={`p-4 pl-6 font-semibold text-[11px] ${isTargetGene ? 'text-blue-600 dark:text-blue-400' : 'text-neutral-600 dark:text-neutral-300'}`}>{row.gene_symbol}</td><td className="p-4 text-center">{isTargetGene && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 mx-auto" />}</td><td className="p-4 pr-6 text-right font-mono text-[11px] text-neutral-600 dark:text-neutral-500">{parseFloat(row.value).toFixed(4)}</td></tr>); })}</tbody></table>)}</div>
       </div>
     </div>
   );
@@ -805,7 +805,7 @@ const App = () => {
     sorts: [],
     globalHiddenMetrics: []
   });
-  const [messages, setMessages] = useState<Message[]>([{ role: 'assistant', content: "GetGene Ready. Targeting breakthroughs in Alzheimer's and other complex diseases.", timestamp: new Date() }]);
+  const [messages, setMessages] = useState<Message[]>([{ role: 'assistant', content: "DiseaseToTarget Ready. Targeting breakthroughs in Alzheimer's and other complex diseases.", timestamp: new Date() }]);
   const [chatInput, setChatInput] = useState("");
   const [isChatting, setIsChatting] = useState(false);
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
@@ -1366,14 +1366,14 @@ const App = () => {
           const filteredOpts = opts.filter(o => (o.score || 0) / maxScore > 0.8).slice(0, 5);
           if (filteredOpts.length === 0 && opts.length > 0) filteredOpts.push(opts[0]);
           if (filteredOpts.length === 1) {
-            const opt = filteredOpts[0]; const genes = await api.getGenes(opt.id, 30, 0); const enr = await api.getEnrichment(genes.map(g => g.symbol));
+            const opt = filteredOpts[0]; const genes = await api.getTargets(opt.id, 30, 0); const enr = await api.getEnrichment(genes.map(g => g.symbol));
             setResearchState(prev => ({ ...prev, targets: genes, enrichment: enr, activeDisease: opt, focusSymbol: genes[0]?.symbol || null, currentPage: 0, survivalMetrics: undefined, medianOs: undefined }));
             return `Project set to ${opt.name}. Molecular evidence mapped.`;
           }
           return { content: `I found several standard matches. Please refine your clinical focus:`, options: filteredOpts };
         }
         case 'get_genes': {
-          const genes = await api.getGenes(args.id, 30, 0); const enr = await api.getEnrichment(genes.map(g => g.symbol));
+          const genes = await api.getTargets(args.id, 30, 0); const enr = await api.getEnrichment(genes.map(g => g.symbol));
           setResearchState(prev => ({ ...prev, targets: genes, enrichment: enr, activeDisease: { id: args.id, name: args.name }, focusSymbol: genes[0]?.symbol || null, currentPage: 0, survivalMetrics: undefined, medianOs: undefined }));
           return `Target prioritization complete for ${args.name}.`;
         }
@@ -1573,7 +1573,7 @@ const App = () => {
         case 'load_more': {
           if (!researchState.activeDisease) return "No active condition to load more data for.";
           const nextPage = researchState.currentPage + 1;
-          const genes = await api.getGenes(researchState.activeDisease.id, 30, nextPage);
+          const genes = await api.getTargets(researchState.activeDisease.id, 30, nextPage);
           if (genes.length === 0) return "No more additional evidence found for this condition.";
           const combinedTargets = [...researchState.targets, ...genes];
           const enr = await api.getEnrichment(combinedTargets.map(g => g.symbol));
@@ -1615,7 +1615,7 @@ const App = () => {
         { name: 'rank_targets', parameters: { type: Type.OBJECT, properties: { priorities: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { field: { type: Type.STRING }, weight: { type: Type.NUMBER } }, required: ['field'] } }, require_active_trials: { type: Type.BOOLEAN } }, required: ['priorities'] } }
       ];
 
-      const systemInstruction = `You are the GetGene AI Assistant, an intelligent terminal for Target List exploration.
+      const systemInstruction = `You are the DiseaseToTarget AI Assistant, an intelligent terminal for Target List exploration.
       
       Core Capabilities:
       - You operate on a Target List of genes associated with a disease.
@@ -1716,7 +1716,7 @@ const App = () => {
     <div className={`h-screen flex flex-col transition-colors duration-200 ${theme === 'dark' ? 'bg-[#0a0a0a] text-neutral-200' : 'bg-neutral-50 text-neutral-900'}`}>
       <header className={`px-6 py-3.5 flex items-center justify-between border-b ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-100'}`}>
         <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2.5"><FlaskConical className="w-5 h-5 text-blue-500" /><h1 className="text-base font-bold tracking-tight">Get<span className="text-blue-500">Gene</span></h1></div>
+          <div className="flex items-center gap-2.5"><FlaskConical className="w-5 h-5 text-blue-500" /><h1 className="text-base font-bold tracking-tight">DiseaseTo<span className="text-blue-500">Target</span></h1></div>
           {researchState.activeDisease && (
             <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 shadow-sm">
               <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
@@ -2723,7 +2723,7 @@ const SignInPage = ({ theme, toggleTheme, onSignIn }: { theme: Theme, toggleThem
             <FlaskConical className="w-10 h-10 text-white" />
           </div>
           <div>
-            <h1 className={`text-3xl font-black tracking-tight ${theme === 'light' ? 'text-neutral-900' : 'text-white'}`}>Get<span className="text-blue-600">Gene</span></h1>
+            <h1 className={`text-3xl font-black tracking-tight ${theme === 'light' ? 'text-neutral-900' : 'text-white'}`}>DiseaseTo<span className="text-blue-600">Target</span></h1>
             <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-neutral-400 dark:text-neutral-500 mt-2">Discovery Portal</p>
           </div>
         </div>
