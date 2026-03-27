@@ -55,7 +55,7 @@ export const api = {
     return hits.map((h: any) => ({ id: h.id, name: h.name, score: h.score }));
   },
 
-  async getTargets(efoId: string, size: number = 30, page: number = 0): Promise<Target[]> {
+  async getGenes(efoId: string, size: number = 30, page: number = 0): Promise<Target[]> {
     const GQL_QUERY = `
       query GetAssociatedTargets($efoId: String!, $size: Int!, $page: Int!) {
         disease(efoId: $efoId) {
@@ -359,6 +359,43 @@ export const api = {
       if (epRecentRes.ok) {
         const epRecentData = await epRecentRes.json();
         drillDown.recent_paper_count = epRecentData.hitCount || 0;
+      }
+
+      // 5. PubMed Stats for "Clinical Publication Insights"
+      try {
+        const apiKeyParam = process.env.NCBI_API_KEY ? `&api_key=${process.env.NCBI_API_KEY}` : '';
+        const baseQuery = `("${diseaseName}"[Title/Abstract]) AND ("${symbol}"[Title/Abstract])`;
+        const recentQuery = `${baseQuery} AND ("2024"[Date - Publication] : "2025"[Date - Publication])`;
+
+        const [totalData, recentData] = await Promise.all([
+          fetch(`${PUBMED_API}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(baseQuery)}&retmode=json${apiKeyParam}`)
+            .then(r => r.json()),
+          fetch(`${PUBMED_API}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(recentQuery)}&retmode=json${apiKeyParam}`)
+            .then(r => r.json())
+        ]);
+
+        const total = parseInt(totalData.esearchresult.count || '0');
+        const recent = parseInt(recentData.esearchresult.count || '0');
+        const recentIds = (recentData.esearchresult.idlist ?? []).slice(0, 3).join(',');
+
+        drillDown.total_signals = total;
+        drillDown.recent_signals = recent;
+        drillDown.signal_velocity = total > 0 ? ((recent / total) * 100).toFixed(1) + '%' : '0%';
+
+        if (recentIds) {
+          const summaryData = await fetch(
+            `${PUBMED_API}/esummary.fcgi?db=pubmed&id=${recentIds}&retmode=json${apiKeyParam}`
+          ).then(r => r.json());
+
+          drillDown.top_papers = (summaryData.result.uids ?? [])
+            .slice(0, 3)
+            .map((k: string) => ({
+              title: summaryData.result[k]?.title ?? 'Untitled',
+              id: k
+            }));
+        }
+      } catch (e) {
+        console.error(`PubMed stats fetch failed in drilldown [${symbol}/${diseaseName}]:`, e);
       }
 
     } catch (e) {

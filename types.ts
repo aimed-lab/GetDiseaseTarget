@@ -16,6 +16,10 @@ export interface DrillDownData {
   top_drugs?: { name: string; count: number }[];
   sponsor_breakdown?: Record<string, number>;
   clinical_summary?: string;
+  total_signals?: number;
+  recent_signals?: number;
+  signal_velocity?: string;
+  top_papers?: { title: string; id: string }[];
 }
 
 export interface Target {

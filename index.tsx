@@ -71,7 +71,8 @@ import {
   ThumbsUp,
   ThumbsDown,
   Pin,
-  Trash2
+  Trash2,
+  Home
 } from 'lucide-react';
 
 import { 
@@ -147,15 +148,18 @@ const detectCancerType = (name: string) => {
 // --- Helper Components for Visualization ---
 
 const RadarChart = ({ target, theme }: { target: Target, theme: Theme }) => {
-  const size = 200;
+  const size = 260;
   const center = size / 2;
-  const radius = size * 0.4;
+  const radius = size * 0.35;
   
   const axes = [
-    { label: 'Genetic', val: target.geneticScore },
-    { label: 'Clinical', val: target.combinedExpression || 0 },
-    { label: 'Target', val: target.targetScore },
-    { label: 'Priority', val: target.overallScore }
+    { label: 'Genetic', val: target.geneticScore, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+    { label: 'Clinical', val: target.clinicalScore || 0, color: 'text-rose-500', bg: 'bg-rose-500/10' },
+    { label: 'Literature', val: target.literatureScore || 0, color: 'text-purple-500', bg: 'bg-purple-500/10' },
+    { label: 'Novelty', val: target.noveltyScore || 0, color: 'text-indigo-500', bg: 'bg-indigo-500/10' },
+    { label: 'Expression', val: target.combinedExpression || 0, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+    { label: 'Target', val: target.targetScore || 0, color: 'text-amber-500', bg: 'bg-amber-500/10' },
+    { label: 'Priority', val: target.overallScore, color: 'text-blue-600', bg: 'bg-blue-600/10' }
   ];
 
   const points = axes.map((a, i) => {
@@ -168,49 +172,66 @@ const RadarChart = ({ target, theme }: { target: Target, theme: Theme }) => {
   const gridLevels = [0.25, 0.5, 0.75, 1.0];
 
   return (
-    <div className="flex flex-col items-center">
-      <svg width={size} height={size} className="overflow-visible">
-        {/* Grids */}
-        {gridLevels.map(level => (
-          <circle
-            key={level}
-            cx={center}
-            cy={center}
-            r={radius * level}
-            fill="none"
-            stroke={theme === 'dark' ? '#334155' : '#cbd5e1'}
-            strokeDasharray="2,2"
+    <div className="flex flex-col lg:flex-row items-center gap-12 w-full">
+      <div className="relative">
+        <svg width={size} height={size} className="overflow-visible">
+          {/* Grids */}
+          {gridLevels.map(level => (
+            <circle
+              key={level}
+              cx={center}
+              cy={center}
+              r={radius * level}
+              fill="none"
+              stroke={theme === 'dark' ? '#334155' : '#cbd5e1'}
+              strokeDasharray="2,2"
+            />
+          ))}
+          {/* Axes */}
+          {axes.map((a, i) => {
+            const angle = (Math.PI * 2 * i) / axes.length - Math.PI / 2;
+            const x2 = center + radius * Math.cos(angle);
+            const y2 = center + radius * Math.sin(angle);
+            return (
+              <g key={i}>
+                <line x1={center} y1={center} x2={x2} y2={y2} stroke={theme === 'dark' ? '#334155' : '#cbd5e1'} />
+                <text
+                  x={center + (radius + 25) * Math.cos(angle)}
+                  y={center + (radius + 20) * Math.sin(angle)}
+                  textAnchor="middle"
+                  fontSize="8"
+                  fontWeight="bold"
+                  className={theme === 'dark' ? 'fill-neutral-500' : 'fill-neutral-600'}
+                >
+                  {a.label}
+                </text>
+              </g>
+            );
+          })}
+          {/* Data Shape */}
+          <polygon
+            points={points}
+            fill="rgba(59, 130, 246, 0.3)"
+            stroke="#3b82f6"
+            strokeWidth="2"
           />
+        </svg>
+      </div>
+
+      <div className="flex-1 grid grid-cols-2 gap-3">
+        {axes.map((a, i) => (
+          <div 
+            key={i}
+            className={`flex flex-col p-3 rounded-xl border transition-all hover:scale-105 ${theme === 'dark' ? 'bg-[#1c1c1c] border-neutral-800' : 'bg-white border-neutral-100 shadow-sm'}`}
+          >
+            <span className="text-[9px] font-bold uppercase text-neutral-400 tracking-widest mb-1">{a.label}</span>
+            <div className="flex items-center justify-between">
+              <span className={`text-lg font-black ${a.color}`}>{a.val.toFixed(3)}</span>
+              <div className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${a.bg} ${a.color}`}>SCORE</div>
+            </div>
+          </div>
         ))}
-        {/* Axes */}
-        {axes.map((a, i) => {
-          const angle = (Math.PI * 2 * i) / axes.length - Math.PI / 2;
-          const x2 = center + radius * Math.cos(angle);
-          const y2 = center + radius * Math.sin(angle);
-          return (
-            <g key={i}>
-              <line x1={center} y1={center} x2={x2} y2={y2} stroke={theme === 'dark' ? '#334155' : '#cbd5e1'} />
-              <text
-                x={center + (radius + 20) * Math.cos(angle)}
-                y={center + (radius + 15) * Math.sin(angle)}
-                textAnchor="middle"
-                fontSize="9"
-                fontWeight="bold"
-                className={theme === 'dark' ? 'fill-neutral-500' : 'fill-neutral-600'}
-              >
-                {a.label}
-              </text>
-            </g>
-          );
-        })}
-        {/* Data Shape */}
-        <polygon
-          points={points}
-          fill="rgba(59, 130, 246, 0.3)"
-          stroke="#3b82f6"
-          strokeWidth="2"
-        />
-      </svg>
+      </div>
     </div>
   );
 };
@@ -577,7 +598,7 @@ const RawDataView = ({ targets, theme, cancerType }: { targets: Target[], theme:
   const [expressionData, setExpressionData] = useState<ExpressionRow[]>([]);
   const [loadingClinical, setLoadingClinical] = useState(false);
   const [loadingExpression, setLoadingExpression] = useState(false);
-  const [showOnlyTargetGenes, setShowOnlyTargetGenes] = useState(true);
+  const [showOnlyGetGenes, setShowOnlyGetGenes] = useState(true);
   const [offset, setOffset] = useState(0);
   const getTargetSymbols = useMemo(() => new Set(targets.map(t => t.symbol)), [targets]);
   
@@ -604,7 +625,7 @@ const RawDataView = ({ targets, theme, cancerType }: { targets: Target[], theme:
     // Since we need expression for a specific sample, we fetch the target genes
     // and filter for this sample. If "Show All" is selected, we are limited by the API
     // so we'll primarily support the target list genes.
-    const genesToFetch = showOnlyTargetGenes ? Array.from(getTargetSymbols) : ['TP53', 'BRCA1', 'EGFR', 'MYC', 'PTEN']; // Fallback small list if not filtered
+    const genesToFetch = showOnlyGetGenes ? Array.from(getTargetSymbols) : ['TP53', 'BRCA1', 'EGFR', 'MYC', 'PTEN']; // Fallback small list if not filtered
     
     const page = await api.getTcgaExpressionPage(cancerType, genesToFetch, 0);
     const sampleRows = page.items.filter(item => {
@@ -618,7 +639,7 @@ const RawDataView = ({ targets, theme, cancerType }: { targets: Target[], theme:
     setExpressionData(sampleRows); 
     setLoadingExpression(false); 
   };
-  const filteredExpression = useMemo(() => { if (!showOnlyTargetGenes) return expressionData; return expressionData.filter(row => getTargetSymbols.has(row.gene_symbol)); }, [expressionData, getTargetSymbols, showOnlyTargetGenes]);
+  const filteredExpression = useMemo(() => { if (!showOnlyGetGenes) return expressionData; return expressionData.filter(row => getTargetSymbols.has(row.gene_symbol)); }, [expressionData, getTargetSymbols, showOnlyGetGenes]);
   return (
     <div className="h-full flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-neutral-100 dark:divide-neutral-800">
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -626,8 +647,8 @@ const RawDataView = ({ targets, theme, cancerType }: { targets: Target[], theme:
         <div className="flex-1 overflow-auto">{loadingClinical ? (<div className="h-full flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>) : (<table className="w-full text-left"><thead className="sticky top-0 bg-neutral-50 dark:bg-neutral-900 border-b border-neutral-100 dark:border-neutral-800 z-10"><tr><th className="p-4 text-[10px] font-bold text-neutral-600 dark:text-neutral-500 uppercase pl-6">Sample ID</th><th className="p-4 text-[10px] font-bold text-neutral-600 dark:text-neutral-500 uppercase">Type</th><th className="p-4 pr-6 text-right text-[10px] font-bold text-neutral-600 dark:text-neutral-500 uppercase">Status</th></tr></thead><tbody className="divide-y divide-neutral-50 dark:divide-neutral-800">{clinicalData.map(sample => (<tr key={sample.sampleid} onClick={() => handleSelectSample(sample)} className={`cursor-pointer transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-800/50 ${selectedSample?.sampleid === sample.sampleid ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}><td className="p-4 pl-6 font-mono text-[11px] text-blue-600 dark:text-blue-400">{sample.sampleid}</td><td className="p-4 text-[11px] text-neutral-700 dark:text-neutral-400">{sample.vital_status === 'Alive' ? 'Alive' : 'Deceased'}</td><td className={`p-4 pr-6 text-right text-[11px] font-medium ${sample.vital_status === 'Alive' ? 'text-[#EB4236]' : 'text-[#4285F5]'}`}>{sample.vital_status}</td></tr>))}</tbody></table>)}</div>
       </div>
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="p-4 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between"><div className="flex items-center gap-2"><Activity className="w-4 h-4 text-neutral-500" /><span className="text-[12px] font-semibold text-neutral-700 dark:text-neutral-400">Sample Expression</span></div><button onClick={() => setShowOnlyTargetGenes(!showOnlyTargetGenes)} className={`text-[10px] font-bold px-3 py-1 rounded border transition-colors ${showOnlyTargetGenes ? 'bg-blue-500 text-white' : 'text-neutral-500'}`}>{showOnlyTargetGenes ? 'FILTERED' : 'ALL'}</button></div>
-        <div className="flex-1 overflow-auto">{!selectedSample ? (<div className="h-full flex flex-col items-center justify-center p-12 text-center text-neutral-400"><DatabaseZap className="w-8 h-8 mb-4 opacity-10" /><p className="text-sm font-medium">Select a patient sample</p></div>) : loadingExpression ? (<div className="h-full flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>) : (<table className="w-full text-left"><thead className="sticky top-0 bg-neutral-50 dark:bg-neutral-900 border-b border-neutral-100 dark:border-neutral-800 z-10"><tr><th className="p-4 text-[10px] font-bold text-neutral-600 dark:text-neutral-500 uppercase pl-6">Gene</th><th className="p-4 text-[10px] font-bold text-neutral-600 dark:text-neutral-500 uppercase text-center">In List</th><th className="p-4 pr-6 text-right text-[10px] font-bold text-neutral-600 dark:text-neutral-500 uppercase">TPM Value</th></tr></thead><tbody className="divide-y divide-neutral-50 dark:divide-neutral-800">{filteredExpression.map(row => { const isTargetGene = getTargetSymbols.has(row.gene_symbol); return (<tr key={row.gene_symbol} className={isTargetGene ? 'bg-blue-50/20 dark:bg-blue-900/5' : ''}><td className={`p-4 pl-6 font-semibold text-[11px] ${isTargetGene ? 'text-blue-600 dark:text-blue-400' : 'text-neutral-600 dark:text-neutral-300'}`}>{row.gene_symbol}</td><td className="p-4 text-center">{isTargetGene && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 mx-auto" />}</td><td className="p-4 pr-6 text-right font-mono text-[11px] text-neutral-600 dark:text-neutral-500">{parseFloat(row.value).toFixed(4)}</td></tr>); })}</tbody></table>)}</div>
+        <div className="p-4 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between"><div className="flex items-center gap-2"><Activity className="w-4 h-4 text-neutral-500" /><span className="text-[12px] font-semibold text-neutral-700 dark:text-neutral-400">Sample Expression</span></div><button onClick={() => setShowOnlyGetGenes(!showOnlyGetGenes)} className={`text-[10px] font-bold px-3 py-1 rounded border transition-colors ${showOnlyGetGenes ? 'bg-blue-500 text-white' : 'text-neutral-500'}`}>{showOnlyGetGenes ? 'FILTERED' : 'ALL'}</button></div>
+        <div className="flex-1 overflow-auto">{!selectedSample ? (<div className="h-full flex flex-col items-center justify-center p-12 text-center text-neutral-400"><DatabaseZap className="w-8 h-8 mb-4 opacity-10" /><p className="text-sm font-medium">Select a patient sample</p></div>) : loadingExpression ? (<div className="h-full flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>) : (<table className="w-full text-left"><thead className="sticky top-0 bg-neutral-50 dark:bg-neutral-900 border-b border-neutral-100 dark:border-neutral-800 z-10"><tr><th className="p-4 text-[10px] font-bold text-neutral-600 dark:text-neutral-500 uppercase pl-6">Gene</th><th className="p-4 text-[10px] font-bold text-neutral-600 dark:text-neutral-500 uppercase text-center">In List</th><th className="p-4 pr-6 text-right text-[10px] font-bold text-neutral-600 dark:text-neutral-500 uppercase">TPM Value</th></tr></thead><tbody className="divide-y divide-neutral-50 dark:divide-neutral-800">{filteredExpression.map(row => { const isGetGene = getTargetSymbols.has(row.gene_symbol); return (<tr key={row.gene_symbol} className={isGetGene ? 'bg-blue-50/20 dark:bg-blue-900/5' : ''}><td className={`p-4 pl-6 font-semibold text-[11px] ${isGetGene ? 'text-blue-600 dark:text-blue-400' : 'text-neutral-600 dark:text-neutral-300'}`}>{row.gene_symbol}</td><td className="p-4 text-center">{isGetGene && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 mx-auto" />}</td><td className="p-4 pr-6 text-right font-mono text-[11px] text-neutral-600 dark:text-neutral-500">{parseFloat(row.value).toFixed(4)}</td></tr>); })}</tbody></table>)}</div>
       </div>
     </div>
   );
@@ -789,6 +810,465 @@ const UsefulnessControls = ({
   );
 };
 
+// =============================================================================
+// Navigation Components
+// =============================================================================
+
+const Breadcrumbs = ({ 
+  activeDisease, 
+  focusSymbol, 
+  focusSubPage,
+  onNavigate, 
+  theme 
+}: { 
+  activeDisease?: DiseaseInfo | null; 
+  focusSymbol?: string | null; 
+  focusSubPage?: 'main' | 'clinical' | 'literature' | null;
+  onNavigate: (level: 'home' | 'disease' | 'target' | 'subpage') => void;
+  theme: Theme;
+}) => {
+  return (
+    <nav className="flex items-center gap-2 mb-5 text-[10px] font-bold uppercase tracking-widest overflow-x-auto custom-scrollbar-x pb-1">
+      <button 
+        onClick={() => onNavigate('home')}
+        className={`flex items-center gap-1.5 transition-all px-2 py-1 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 whitespace-nowrap ${!activeDisease ? 'text-blue-600 bg-blue-50/50 dark:bg-blue-900/10' : 'text-neutral-400 hover:text-blue-500'}`}
+      >
+        <Home className="w-3.5 h-3.5" />
+        Home
+      </button>
+      
+      {activeDisease && (
+        <>
+          <ChevronRight className="w-3 h-3 text-neutral-300 dark:text-neutral-700 shrink-0" />
+          <button 
+            onClick={() => onNavigate('disease')}
+            className={`flex items-center gap-1.5 transition-all px-2 py-1 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 whitespace-nowrap ${activeDisease && !focusSymbol ? 'text-blue-600 bg-blue-50/50 dark:bg-blue-900/10' : 'text-neutral-400 hover:text-blue-500'}`}
+          >
+            <FlaskConical className="w-3.5 h-3.5" />
+            {activeDisease.name}
+          </button>
+        </>
+      )}
+
+      {focusSymbol && (
+        <>
+          <ChevronRight className="w-3 h-3 text-neutral-300 dark:text-neutral-700 shrink-0" />
+          <button 
+            onClick={() => onNavigate('target')}
+            className={`flex items-center gap-1.5 transition-all px-2 py-1 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 whitespace-nowrap ${focusSymbol && focusSubPage === 'main' ? 'text-blue-600 bg-blue-50/50 dark:bg-blue-900/10' : 'text-neutral-400 hover:text-blue-500'}`}
+          >
+            <Atom className="w-3.5 h-3.5" />
+            {focusSymbol}
+          </button>
+        </>
+      )}
+
+      {focusSymbol && focusSubPage && focusSubPage !== 'main' && (
+        <>
+          <ChevronRight className="w-3 h-3 text-neutral-300 dark:text-neutral-700 shrink-0" />
+          <div className="flex items-center gap-1.5 text-blue-600 bg-blue-50/50 dark:bg-blue-900/10 px-2 py-1 rounded-md whitespace-nowrap">
+            {focusSubPage === 'clinical' ? <Stethoscope className="w-3.5 h-3.5" /> : <BookOpen className="w-3.5 h-3.5" />}
+            {focusSubPage === 'clinical' ? 'Clinical Intelligence' : 'Literature Intelligence'}
+          </div>
+        </>
+      )}
+    </nav>
+  );
+};
+
+const TargetDetailView = ({ 
+  target, 
+  theme, 
+  diseaseName,
+  subPage = 'main',
+  onToggleUsefulness,
+  onNavigateSubPage,
+  onBack
+}: { 
+  target: Target; 
+  theme: Theme; 
+  diseaseName: string;
+  subPage?: 'main' | 'clinical' | 'literature';
+  onToggleUsefulness: (symbol: string, source: string, status: 'useful' | 'not-useful' | 'pinned' | null) => void;
+  onNavigateSubPage: (page: 'main' | 'clinical' | 'literature') => void;
+  onBack: () => void;
+}) => {
+  if (subPage === 'clinical') {
+    return (
+      <div className="h-full flex flex-col overflow-hidden animate-in fade-in slide-in-from-right-4 duration-500">
+        <div className={`p-6 border-b flex items-center justify-between ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-100'}`}>
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => onNavigateSubPage('main')}
+              className="p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+            >
+              <ChevronLeft className="w-5 h-5 text-neutral-400" />
+            </button>
+            <div className="space-y-1">
+              <h3 className="text-2xl font-black text-rose-600 dark:text-rose-400 tracking-tighter flex items-center gap-2">
+                <Stethoscope className="w-6 h-6" /> Clinical Intelligence: {target.symbol}
+              </h3>
+              <p className="text-[10px] font-bold uppercase text-neutral-400 tracking-widest">In-depth trial landscape and regulatory progress</p>
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+          <div className="max-w-4xl mx-auto space-y-10">
+            {target.drillDown ? (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className={`p-6 rounded-2xl border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}>
+                    <span className="text-[10px] font-bold text-neutral-400 uppercase block mb-1">Total Trials</span>
+                    <span className="text-3xl font-black text-rose-600">{target.drillDown.trial_count}</span>
+                  </div>
+                  <div className={`p-6 rounded-2xl border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}>
+                    <span className="text-[10px] font-bold text-neutral-400 uppercase block mb-1">Max Phase</span>
+                    <span className="text-3xl font-black text-rose-600">{target.drillDown.max_phase}</span>
+                  </div>
+                  <div className={`p-6 rounded-2xl border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}>
+                    <span className="text-[10px] font-bold text-neutral-400 uppercase block mb-1">Active Status</span>
+                    <span className={`text-xl font-black ${target.drillDown.active_trial_present ? 'text-green-600' : 'text-neutral-400'}`}>
+                      {target.drillDown.active_trial_present ? 'RECRUITING' : 'INACTIVE'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                   <div className="space-y-4">
+                      <h4 className="text-[12px] font-bold uppercase text-neutral-500 tracking-widest">Phase Breakdown</h4>
+                      <div className="h-[250px]">
+                         <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={Object.entries(target.drillDown.phase_breakdown || {}).map(([k,v]) => ({name: k.replace('PHASE', 'P'), value: v}))}>
+                               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#333' : '#eee'} />
+                               <XAxis dataKey="name" tick={{fontSize: 10, fontWeight: 'bold'}} axisLine={false} tickLine={false} />
+                               <YAxis tick={{fontSize: 10, fontWeight: 'bold'}} axisLine={false} tickLine={false} />
+                               <RechartsTooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}} />
+                               <Bar dataKey="value" fill="#e11d48" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                         </ResponsiveContainer>
+                      </div>
+                   </div>
+                   <div className="space-y-4">
+                      <h4 className="text-[12px] font-bold uppercase text-neutral-500 tracking-widest">Sponsor Profile</h4>
+                      <div className="h-[250px]">
+                         <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                               <Pie
+                                  data={Object.entries(target.drillDown.sponsor_breakdown || {}).map(([k,v]) => ({name: k, value: v}))}
+                                  innerRadius={60}
+                                  outerRadius={80}
+                                  paddingAngle={5}
+                                  dataKey="value"
+                               >
+                                  {Object.entries(target.drillDown.sponsor_breakdown || {}).map((_, index) => (
+                                    <Cell key={`cell-${index}`} fill={['#e11d48', '#f43f5e', '#fb7185', '#fda4af', '#fecdd3'][index % 5]} />
+                                  ))}
+                               </Pie>
+                               <RechartsTooltip />
+                               <Legend verticalAlign="bottom" height={36}/>
+                            </PieChart>
+                         </ResponsiveContainer>
+                      </div>
+                   </div>
+                </div>
+
+                <div className="pt-10 space-y-4">
+                  <h4 className="text-[12px] font-bold uppercase text-neutral-500 tracking-widest">Pipeline Evidence</h4>
+                  <DrugLandscape 
+                    targetId={target.id} 
+                    symbol={target.symbol}
+                    theme={theme} 
+                    currentStatus={target.usefulness?.['clinical']}
+                    onToggle={onToggleUsefulness}
+                  />
+                </div>
+
+                <div className="pt-10 space-y-4">
+                  <h4 className="text-[12px] font-bold uppercase text-neutral-500 tracking-widest">External Clinical Registries</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <a 
+                      href={`https://clinicaltrials.gov/search?cond=${encodeURIComponent(diseaseName)}&term=${encodeURIComponent(target.symbol)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-between p-5 rounded-2xl border border-neutral-200 dark:border-neutral-800 hover:bg-rose-50 dark:hover:bg-rose-900/10 transition-all group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-xl bg-rose-100 dark:bg-rose-900/30 text-rose-600"><Database className="w-5 h-5" /></div>
+                        <div className="text-left">
+                          <span className="text-[11px] font-black text-neutral-800 dark:text-neutral-200 block">ClinicalTrials.gov</span>
+                          <span className="text-[9px] font-bold text-neutral-400 uppercase">US National Library of Medicine</span>
+                        </div>
+                      </div>
+                      <ExternalLink className="w-4 h-4 text-neutral-300 group-hover:text-rose-500 transition-colors" />
+                    </a>
+                  </div>
+                </div>
+
+                <div className="pt-10 space-y-4">
+                  <h4 className="text-[12px] font-bold uppercase text-neutral-500 tracking-widest border-b pb-2">Regulatory & Clinical Summary</h4>
+                  <div className={`p-8 rounded-3xl border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-neutral-50/50 border-neutral-200'}`}>
+                    <p className="text-lg text-neutral-800 dark:text-neutral-200 leading-relaxed italic">
+                      "{target.drillDown.clinical_summary || 'No clinical summary available for this target.'}"
+                    </p>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center p-20 text-center">
+                <Loader2 className="w-10 h-10 animate-spin text-rose-500 mb-4" />
+                <p className="text-sm font-bold text-neutral-500 uppercase tracking-widest">Synthesizing Clinical Data...</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (subPage === 'literature') {
+    return (
+      <div className="h-full flex flex-col overflow-hidden animate-in fade-in slide-in-from-right-4 duration-500">
+        <div className={`p-6 border-b flex items-center justify-between ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-100'}`}>
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => onNavigateSubPage('main')}
+              className="p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+            >
+              <ChevronLeft className="w-5 h-5 text-neutral-400" />
+            </button>
+            <div className="space-y-1">
+              <h3 className="text-2xl font-black text-purple-600 dark:text-purple-400 tracking-tighter flex items-center gap-2">
+                <BookOpen className="w-6 h-6" /> Literature Intelligence: {target.symbol}
+              </h3>
+              <p className="text-[10px] font-bold uppercase text-neutral-400 tracking-widest">Scientific publication trends and evidence mapping</p>
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+          <div className="max-w-4xl mx-auto space-y-10">
+            {target.drillDown ? (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className={`p-6 rounded-2xl border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}>
+                    <span className="text-[10px] font-bold text-neutral-400 uppercase block mb-1">Total Signals</span>
+                    <span className="text-3xl font-black text-purple-600">{target.drillDown.total_signals || 0}</span>
+                  </div>
+                  <div className={`p-6 rounded-2xl border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}>
+                    <span className="text-[10px] font-bold text-neutral-400 uppercase block mb-1">Recent (2024-25)</span>
+                    <span className="text-3xl font-black text-purple-600">{target.drillDown.recent_signals || 0}</span>
+                  </div>
+                  <div className={`p-6 rounded-2xl border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}>
+                    <span className="text-[10px] font-bold text-neutral-400 uppercase block mb-1">Signal Velocity</span>
+                    <span className="text-2xl font-black text-purple-600">{target.drillDown.signal_velocity || '0%'}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  <h4 className="text-[12px] font-bold uppercase text-neutral-500 tracking-widest border-b pb-2">Publication Intelligence</h4>
+                  <LiteratureStats 
+                    symbol={target.symbol} 
+                    diseaseName={diseaseName} 
+                    theme={theme} 
+                    currentStatus={target.usefulness?.['literature']}
+                    onToggle={onToggleUsefulness}
+                  />
+                </div>
+
+                <div className="pt-10 space-y-4">
+                  <h4 className="text-[12px] font-bold uppercase text-neutral-500 tracking-widest">Global Evidence Repositories</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <a 
+                      href={`https://pubmed.ncbi.nlm.nih.gov/?term=${encodeURIComponent(target.symbol)}+${encodeURIComponent(diseaseName)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-between p-5 rounded-2xl border border-neutral-200 dark:border-neutral-800 hover:bg-purple-50 dark:hover:bg-purple-900/10 transition-all group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-xl bg-purple-100 dark:bg-purple-900/30 text-purple-600"><FileText className="w-5 h-5" /></div>
+                        <div className="text-left">
+                          <span className="text-[11px] font-black text-neutral-800 dark:text-neutral-200 block">PubMed / MEDLINE</span>
+                          <span className="text-[9px] font-bold text-neutral-400 uppercase">NIH National Library</span>
+                        </div>
+                      </div>
+                      <ExternalLink className="w-4 h-4 text-neutral-300 group-hover:text-purple-500 transition-colors" />
+                    </a>
+                    <a 
+                      href={`https://europepmc.org/search?query=${encodeURIComponent(target.symbol)}+AND+${encodeURIComponent(diseaseName)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-between p-5 rounded-2xl border border-neutral-200 dark:border-neutral-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/10 transition-all group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600"><Globe2 className="w-5 h-5" /></div>
+                        <div className="text-left">
+                          <span className="text-[11px] font-black text-neutral-800 dark:text-neutral-200 block">Europe PMC</span>
+                          <span className="text-[9px] font-bold text-neutral-400 uppercase">EMBL-EBI Open Access</span>
+                        </div>
+                      </div>
+                      <ExternalLink className="w-4 h-4 text-neutral-300 group-hover:text-indigo-500 transition-colors" />
+                    </a>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center p-20 text-center">
+                <Loader2 className="w-10 h-10 animate-spin text-purple-500 mb-4" />
+                <p className="text-sm font-bold text-neutral-500 uppercase tracking-widest">Mapping Scientific Evidence...</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full flex flex-col overflow-hidden animate-in fade-in slide-in-from-right-4 duration-500">
+      <div className={`p-6 border-b flex items-center justify-between ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-100'}`}>
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={onBack}
+            className="p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+          >
+            <ChevronLeft className="w-5 h-5 text-neutral-400" />
+          </button>
+          <div className="space-y-1">
+            <div className="flex items-center gap-3">
+              <h3 className="text-4xl font-black text-blue-600 dark:text-blue-50 tracking-tighter">{target.symbol}</h3>
+              <div className="px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 text-[10px] font-bold text-blue-600 uppercase">
+                Score: {target.overallScore.toFixed(4)}
+              </div>
+            </div>
+            <p className={`text-[12px] font-bold uppercase tracking-wide ${theme === 'dark' ? 'text-neutral-500' : 'text-neutral-600'}`}>{target.name}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          <span className="text-[10px] font-bold uppercase text-neutral-400 tracking-widest">Priority Status</span>
+          <UsefulnessControls 
+            symbol={target.symbol} 
+            source="overall" 
+            currentStatus={target.usefulness?.['overall']} 
+            onToggle={onToggleUsefulness} 
+            theme={theme} 
+          />
+        </div>
+      </div>
+      
+      <div className="flex-1 overflow-y-auto p-8 space-y-10 custom-scrollbar">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h4 className="text-[10px] font-bold uppercase text-neutral-500 dark:text-neutral-400 tracking-widest">Molecular Radar</h4>
+            <UsefulnessControls 
+              symbol={target.symbol} 
+              source="radar" 
+              currentStatus={target.usefulness?.['radar']} 
+              onToggle={onToggleUsefulness} 
+              theme={theme} 
+            />
+          </div>
+          <div className={`p-10 rounded-3xl border shadow-inner flex items-center justify-center ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-neutral-50 border-neutral-200'}`}>
+            <RadarChart target={target} theme={theme} />
+          </div>
+        </div>
+
+        {target.drillDown ? (
+          <div className="pt-10 border-t border-neutral-100 dark:border-neutral-800">
+            <h4 className="text-[10px] font-bold uppercase text-neutral-500 dark:text-neutral-400 tracking-widest mb-6">Deep Evidence Intelligence</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {/* Clinical Trials Section */}
+              <div 
+                onClick={() => onNavigateSubPage('clinical')}
+                className={`p-6 rounded-2xl border cursor-pointer transition-all hover:ring-2 hover:ring-rose-500/50 hover:shadow-lg ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-900/20"><Stethoscope className="w-4 h-4 text-rose-500" /></div>
+                    <h4 className="text-[11px] font-bold uppercase text-neutral-500 tracking-wider">Clinical Trials</h4>
+                  </div>
+                  <div className="text-[9px] font-bold text-rose-600 uppercase tracking-tighter">Click for Details</div>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-end"><span className="text-[10px] font-bold text-neutral-400 uppercase">Trial Count</span><span className="text-xl font-black text-rose-600">{target.drillDown.trial_count}</span></div>
+                  <div className="flex justify-between items-end"><span className="text-[10px] font-bold text-neutral-400 uppercase">Interventional</span><span className="text-lg font-bold text-rose-500">{target.drillDown.interventional_count || 0}</span></div>
+                  <div className="flex justify-between items-end"><span className="text-[10px] font-bold text-neutral-400 uppercase">Max Phase</span><span className={`px-2 py-0.5 rounded text-[10px] font-bold ${theme === 'dark' ? 'bg-rose-900/30 text-rose-400' : 'bg-rose-50 text-rose-700'}`}>{target.drillDown.max_phase}</span></div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-bold text-neutral-400 uppercase">Active Trials</span>
+                    <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold ${target.drillDown.active_trial_present ? (theme === 'dark' ? 'bg-emerald-900/30 text-emerald-400' : 'bg-emerald-50 text-emerald-700') : (theme === 'dark' ? 'bg-neutral-800 text-neutral-500' : 'bg-neutral-100 text-neutral-500')}`}>
+                      <div className={`w-1.5 h-1.5 rounded-full ${target.drillDown.active_trial_present ? 'bg-emerald-500 animate-pulse' : 'bg-neutral-400'}`} />
+                      {target.drillDown.active_trial_present ? 'PRESENT' : 'NONE'}
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800 flex items-center gap-2">
+                    <span className="text-[9px] font-bold text-neutral-400 uppercase">Source: ClinicalTrials.gov</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Clinical Publication Insights Section */}
+              <div 
+                onClick={() => onNavigateSubPage('literature')}
+                className={`p-6 rounded-2xl border cursor-pointer transition-all hover:ring-2 hover:ring-indigo-500/50 hover:shadow-lg ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/20"><FileText className="w-4 h-4 text-indigo-500" /></div>
+                    <h4 className="text-[11px] font-bold uppercase text-neutral-500 tracking-wider">Publication Insights</h4>
+                  </div>
+                  <div className="text-[9px] font-bold text-indigo-600 uppercase tracking-tighter">Click for Details</div>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-end"><span className="text-[10px] font-bold text-neutral-400 uppercase">Total Signals</span><span className="text-xl font-black text-indigo-600">{target.drillDown.total_signals || 0}</span></div>
+                  <div className="flex justify-between items-end"><span className="text-[10px] font-bold text-neutral-400 uppercase">Recent (24-25)</span><span className="text-lg font-bold text-indigo-500">{target.drillDown.recent_signals || 0}</span></div>
+                  <div className="flex justify-between items-end"><span className="text-[10px] font-bold text-neutral-400 uppercase">Signal Velocity</span><span className="text-[11px] font-mono font-bold text-indigo-600">{target.drillDown.signal_velocity || '0%'}</span></div>
+                  <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800">
+                    <span className="text-[9px] font-bold text-neutral-400 uppercase block mb-1">Latest Publication</span>
+                    <p className="text-[10px] text-neutral-600 dark:text-neutral-400 line-clamp-1 italic">
+                      {target.drillDown.top_papers?.[0]?.title || 'No recent publications found'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Europe PMC Section */}
+              <div className={`p-6 rounded-2xl border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm opacity-80'}`}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-purple-50 dark:bg-purple-900/20"><BookOpen className="w-4 h-4 text-purple-500" /></div>
+                    <h4 className="text-[11px] font-bold uppercase text-neutral-500 tracking-wider">Europe PMC</h4>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-end"><span className="text-[10px] font-bold text-neutral-400 uppercase">Paper Count</span><span className="text-xl font-black text-purple-600">{target.drillDown.paper_count.toLocaleString()}</span></div>
+                  <div className="flex justify-between items-end"><span className="text-[10px] font-bold text-neutral-400 uppercase">Recent (3y)</span><span className="text-lg font-bold text-purple-500">{target.drillDown.recent_paper_count.toLocaleString()}</span></div>
+                  <div className="flex justify-between items-end"><span className="text-[10px] font-bold text-neutral-400 uppercase">Latest Pub</span><span className="text-[11px] font-mono font-bold text-neutral-600 dark:text-neutral-400">{target.drillDown.latest_publication_date}</span></div>
+                  <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800 flex items-center gap-2">
+                    <span className="text-[9px] font-bold text-neutral-400 uppercase">Source: Europe PMC</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Target Summary (Moved to last) */}
+            <div className={`mt-10 p-8 rounded-3xl border shadow-sm ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200'}`}>
+              <h4 className="text-[10px] font-bold uppercase text-neutral-500 dark:text-neutral-400 tracking-widest mb-4">Target Summary</h4>
+              <p className={`text-sm leading-relaxed ${theme === 'dark' ? 'text-neutral-400' : 'text-neutral-600'}`}>
+                {target.name} ({target.symbol}) is a significant target in {diseaseName} research. 
+                With an overall evidence score of {target.overallScore.toFixed(4)}, it shows strong {target.geneticScore > 0.5 ? 'genetic' : 'molecular'} associations.
+                Explore the deep evidence intelligence above for detailed clinical and publication insights.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="pt-10 border-t border-neutral-100 dark:border-neutral-800 flex flex-col items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-4" />
+            <p className="text-[11px] font-bold uppercase text-neutral-500 tracking-widest">Synthesizing Deep Evidence...</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const App = () => {
   const [theme, setTheme] = useState<Theme>('light');
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('pharm_user'));
@@ -809,23 +1289,17 @@ const App = () => {
   const [chatInput, setChatInput] = useState("");
   const [isChatting, setIsChatting] = useState(false);
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
-  const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
   const [activeScoreInfo, setActiveScoreInfo] = useState<'genetic' | 'expression' | 'target' | 'overall' | 'literature' | 'clinical' | 'novelty' | null>(null);
   const [activeClinicalDetailGene, setActiveClinicalDetailGene] = useState<string | null>(null);
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
-  const [expandedGene, setExpandedGene] = useState<string | null>(null);
   const [drillDownLoading, setDrillDownLoading] = useState<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight; }, [messages]);
   const [isExporting, setIsExporting] = useState(false);
+  const [focusSubPage, setFocusSubPage] = useState<'main' | 'clinical' | 'literature'>('main');
 
   const handleDrillDown = async (symbol: string) => {
-    if (expandedGene === symbol) {
-      setExpandedGene(null);
-      return;
-    }
-
     const target = researchState.targets.find(t => t.symbol === symbol);
     if (target && !target.drillDown) {
       setDrillDownLoading(symbol);
@@ -836,7 +1310,6 @@ const App = () => {
       }));
       setDrillDownLoading(null);
     }
-    setExpandedGene(symbol);
   };
   
   const toggleUsefulness = (symbol: string, source: string, status: 'useful' | 'not-useful' | 'pinned') => {
@@ -1366,15 +1839,15 @@ const App = () => {
           const filteredOpts = opts.filter(o => (o.score || 0) / maxScore > 0.8).slice(0, 5);
           if (filteredOpts.length === 0 && opts.length > 0) filteredOpts.push(opts[0]);
           if (filteredOpts.length === 1) {
-            const opt = filteredOpts[0]; const genes = await api.getTargets(opt.id, 30, 0); const enr = await api.getEnrichment(genes.map(g => g.symbol));
-            setResearchState(prev => ({ ...prev, targets: genes, enrichment: enr, activeDisease: opt, focusSymbol: genes[0]?.symbol || null, currentPage: 0, survivalMetrics: undefined, medianOs: undefined }));
+            const opt = filteredOpts[0]; const genes = await api.getGenes(opt.id, 30, 0); const enr = await api.getEnrichment(genes.map(g => g.symbol));
+            setResearchState(prev => ({ ...prev, targets: genes, enrichment: enr, activeDisease: opt, focusSymbol: null, currentPage: 0, survivalMetrics: undefined, medianOs: undefined }));
             return `Project set to ${opt.name}. Molecular evidence mapped.`;
           }
           return { content: `I found several standard matches. Please refine your clinical focus:`, options: filteredOpts };
         }
         case 'get_genes': {
-          const genes = await api.getTargets(args.id, 30, 0); const enr = await api.getEnrichment(genes.map(g => g.symbol));
-          setResearchState(prev => ({ ...prev, targets: genes, enrichment: enr, activeDisease: { id: args.id, name: args.name }, focusSymbol: genes[0]?.symbol || null, currentPage: 0, survivalMetrics: undefined, medianOs: undefined }));
+          const genes = await api.getGenes(args.id, 30, 0); const enr = await api.getEnrichment(genes.map(g => g.symbol));
+          setResearchState(prev => ({ ...prev, targets: genes, enrichment: enr, activeDisease: { id: args.id, name: args.name }, focusSymbol: null, currentPage: 0, survivalMetrics: undefined, medianOs: undefined }));
           return `Target prioritization complete for ${args.name}.`;
         }
         case 'get_target_list': {
@@ -1569,11 +2042,15 @@ const App = () => {
             { label: 'Novel Targets', scoreType: 'noveltyScore', threshold: 0.8, operator: 'gt' as const }
           ]};
         }
-        case 'update_view': { setViewMode(args.mode); return `Visualization focus shifted to ${args.mode}.`; }
+        case 'update_view': { 
+          setViewMode(args.mode); 
+          setResearchState(p => ({ ...p, focusSymbol: null })); 
+          return `Visualization focus shifted to ${args.mode}.`; 
+        }
         case 'load_more': {
           if (!researchState.activeDisease) return "No active condition to load more data for.";
           const nextPage = researchState.currentPage + 1;
-          const genes = await api.getTargets(researchState.activeDisease.id, 30, nextPage);
+          const genes = await api.getGenes(researchState.activeDisease.id, 30, nextPage);
           if (genes.length === 0) return "No more additional evidence found for this condition.";
           const combinedTargets = [...researchState.targets, ...genes];
           const enr = await api.getEnrichment(combinedTargets.map(g => g.symbol));
@@ -1773,18 +2250,51 @@ const App = () => {
         </aside>
         {!isLeftSidebarOpen && (<button onClick={() => setIsLeftSidebarOpen(true)} className="absolute left-4 bottom-4 z-20 p-2.5 rounded-full bg-blue-600 text-white shadow-xl hover:scale-110 transition-transform"><MessageSquare className="w-5 h-5" /></button>)}
         <section className="flex-1 flex flex-col p-6 overflow-hidden">
-           <div className="flex items-center mb-5 overflow-hidden w-full">
-              <div className={`flex p-1 rounded-xl border w-full overflow-x-auto custom-scrollbar-x ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}>
-                {[ {id:'list',i:List,l:'TARGET LIST'}, {id:'correlation',i:Network,l:'Correlation'}, {id:'enrichment',i:BarChart3,l:'Enrichment'}, {id:'graph',i:Share2,l:'Graph'}, {id:'terrain',i:Globe2,l:'Terrain'}, {id:'survival',i:Activity,l:'Outcome'}, {id:'raw',i:Database,l:'Cohort Data'} ].map(t => (
-                  <button key={t.id} onClick={() => setViewMode(t.id as any)} className={`px-4 py-2.5 rounded-lg text-[11px] font-bold uppercase flex items-center gap-2 transition-all whitespace-nowrap min-w-fit ${viewMode === t.id ? 'bg-blue-600 text-white shadow-md' : 'text-neutral-500 hover:text-blue-600 hover:bg-blue-50/50 dark:hover:bg-neutral-800'}`}>
-                    <t.i className="w-4 h-4" /> {t.l}
-                  </button>
-                ))}
-              </div>
-           </div>
+           <Breadcrumbs 
+             activeDisease={researchState.activeDisease} 
+             focusSymbol={researchState.focusSymbol}
+             focusSubPage={focusSubPage}
+             theme={theme}
+             onNavigate={(level) => {
+               if (level === 'home') {
+                 setResearchState(p => ({ ...p, activeDisease: null, focusSymbol: null, enrichment: [], survivalMetrics: undefined }));
+                 setFocusSubPage('main');
+               } else if (level === 'disease') {
+                 setResearchState(p => ({ ...p, focusSymbol: null }));
+                 setFocusSubPage('main');
+               } else if (level === 'target') {
+                 setFocusSubPage('main');
+               }
+             }}
+           />
+           {!researchState.focusSymbol && (
+             <div className="flex items-center mb-5 overflow-hidden w-full animate-in fade-in slide-in-from-left-4 duration-300">
+                <div className={`flex p-1 rounded-xl border w-full overflow-x-auto custom-scrollbar-x ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}>
+                  {[ {id:'list',i:List,l:'TARGET LIST'}, {id:'correlation',i:Network,l:'Correlation'}, {id:'enrichment',i:BarChart3,l:'Enrichment'}, {id:'graph',i:Share2,l:'Graph'}, {id:'terrain',i:Globe2,l:'Terrain'}, {id:'survival',i:Activity,l:'Outcome'}, {id:'raw',i:Database,l:'Cohort Data'} ].map(t => (
+                    <button key={t.id} onClick={() => setViewMode(t.id as any)} className={`px-4 py-2.5 rounded-lg text-[11px] font-bold uppercase flex items-center gap-2 transition-all whitespace-nowrap min-w-fit ${viewMode === t.id ? 'bg-blue-600 text-white shadow-md' : 'text-neutral-500 hover:text-blue-600 hover:bg-blue-50/50 dark:hover:bg-neutral-800'}`}>
+                      <t.i className="w-4 h-4" /> {t.l}
+                    </button>
+                  ))}
+                </div>
+             </div>
+           )}
            <div className={`flex-1 rounded-2xl border overflow-hidden relative ${theme === 'dark' ? 'bg-[#121212] border-neutral-800' : 'bg-white shadow-lg'}`}>
               {(loading || researchState.isAnalyzingSurvival) && (<div className="absolute inset-0 bg-neutral-900/40 backdrop-blur-[2px] z-50 flex flex-col items-center justify-center gap-4"><Loader2 className="w-8 h-8 animate-spin text-blue-500" /><p className="text-[11px] font-bold uppercase text-white tracking-widest">Mapping Intelligence...</p></div>)}
-              {researchState.targets.length === 0 && viewMode !== 'raw' ? (<div className="h-full flex flex-col items-center justify-center p-20 text-center"><Search className="w-16 h-16 text-blue-500 mb-8 opacity-20" /><h2 className="text-xl font-bold mb-2 text-neutral-800 dark:text-neutral-200 tracking-tight">System Ready for Research Focus</h2><p className="text-sm text-neutral-600 dark:text-neutral-500 max-w-sm leading-relaxed">Search for a therapeutic area or disease in the terminal to begin multi-modal target discovery.</p></div>) : (viewMode === 'raw' || viewMode === 'survival') && !activeCancerType ? (<div className="h-full flex flex-col items-center justify-center p-12 text-center"><div className="p-5 rounded-full bg-blue-50 dark:bg-blue-900/20 mb-6"><AlertCircle className="w-12 h-12 text-blue-600" /></div><h3 className="text-xl font-bold mb-2 text-neutral-800 dark:text-neutral-200">Optimized Context Required</h3><p className="text-sm max-w-md text-neutral-600 dark:text-neutral-500 leading-relaxed">Cohort and Outcome analytics are currently specifically tuned for high-resolution TCGA (e.g. BRCA, KIRC, BLCA) studies.</p></div>) : (
+              
+              {researchState.focusSymbol ? (
+                <TargetDetailView 
+                  target={researchState.targets.find(t => t.symbol === researchState.focusSymbol)!}
+                  theme={theme}
+                  diseaseName={researchState.activeDisease?.name || "Evidence"}
+                  subPage={focusSubPage}
+                  onToggleUsefulness={toggleUsefulness}
+                  onNavigateSubPage={setFocusSubPage}
+                  onBack={() => {
+                    setResearchState(p => ({ ...p, focusSymbol: null }));
+                    setFocusSubPage('main');
+                  }}
+                />
+              ) : researchState.targets.length === 0 && viewMode !== 'raw' ? (<div className="h-full flex flex-col items-center justify-center p-20 text-center animate-in zoom-in duration-500"><Search className="w-16 h-16 text-blue-500 mb-8 opacity-20" /><h2 className="text-xl font-bold mb-2 text-neutral-800 dark:text-neutral-200 tracking-tight">System Ready for Research Focus</h2><p className="text-sm text-neutral-600 dark:text-neutral-500 max-w-sm leading-relaxed">Search for a therapeutic area or disease in the terminal to begin multi-modal target discovery.</p></div>) : (viewMode === 'raw' || viewMode === 'survival') && !activeCancerType ? (<div className="h-full flex flex-col items-center justify-center p-12 text-center"><div className="p-5 rounded-full bg-blue-50 dark:bg-blue-900/20 mb-6"><AlertCircle className="w-12 h-12 text-blue-600" /></div><h3 className="text-xl font-bold mb-2 text-neutral-800 dark:text-neutral-200">Optimized Context Required</h3><p className="text-sm max-w-md text-neutral-600 dark:text-neutral-500 leading-relaxed">Cohort and Outcome analytics are currently specifically tuned for high-resolution TCGA (e.g. BRCA, KIRC, BLCA) studies.</p></div>) : (
                 <>
                   {viewMode === 'list' && (
                     <div className="h-full flex flex-col">
@@ -2038,22 +2548,12 @@ const App = () => {
                               return (
                                 <React.Fragment key={t.id}>
                                   <tr 
-                                    onClick={()=>setResearchState(p=>({...p, focusSymbol: t.symbol}))} 
+                                    onClick={()=>{
+                                      setResearchState(p=>({...p, focusSymbol: t.symbol}));
+                                      if (!t.drillDown) handleDrillDown(t.symbol);
+                                    }} 
                                     className={`cursor-pointer transition-all hover:bg-blue-50/30 dark:hover:bg-neutral-800/20 ${researchState.focusSymbol === t.symbol ? 'bg-blue-100/30 dark:bg-blue-900/10' : ''} ${isRowPinned ? 'ring-2 ring-inset ring-blue-500/50 bg-blue-50/10 dark:bg-blue-900/5' : ''}`}
                                   >
-                                  <td className="p-4 text-center">
-                                    {!areAllMetricsHidden && (
-                                      <button 
-                                        onClick={(e) => { e.stopPropagation(); handleDrillDown(t.symbol); }}
-                                        className="p-1 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
-                                      >
-                                        {expandedGene === t.symbol ? 
-                                          <ChevronUp className="w-4 h-4 text-neutral-500" /> : 
-                                          <ChevronDown className="w-4 h-4 text-neutral-500" />
-                                        }
-                                      </button>
-                                    )}
-                                  </td>
                                   <td className="p-4 pl-4 font-bold text-blue-700 dark:text-blue-500 text-[13px]">{t.symbol}</td>
                                   <td className={`p-4 text-[12px] hidden md:table-cell ${theme === 'dark' ? 'text-neutral-400' : 'text-neutral-900'}`}>{t.name}</td>
                                   <td className={`p-4 text-center font-mono text-[11px] font-medium ${theme === 'dark' ? 'text-neutral-400' : 'text-neutral-700'}`}>{t.geneticScore.toFixed(3)}</td>
@@ -2064,126 +2564,6 @@ const App = () => {
                                   <td className={`p-4 text-center font-mono text-[11px] font-medium ${theme === 'dark' ? 'text-neutral-400' : 'text-neutral-700'}`}>{t.targetScore.toFixed(3)}</td>
                                   <td className="p-4 pr-8 text-right font-mono font-bold text-[12px] text-blue-600">{t.overallScore.toFixed(4)}</td>
                                 </tr>
-                                {expandedGene === t.symbol && (
-                                  <tr className={`${theme === 'dark' ? 'bg-[#0d0d0d]' : 'bg-neutral-50/50'}`}>
-                                    <td colSpan={10} className="p-6">
-                                      <div className="flex items-center justify-between mb-6 pb-4 border-b border-neutral-100 dark:border-neutral-800">
-                                        <div className="flex items-center gap-3">
-                                          <div className="p-2 rounded-xl bg-blue-50 dark:bg-blue-900/20"><DatabaseZap className="w-5 h-5 text-blue-600" /></div>
-                                          <h3 className="text-lg font-bold tracking-tight text-neutral-800 dark:text-neutral-200">Evidence Prioritization for {t.symbol}</h3>
-                                        </div>
-                                        <div className="flex items-center gap-4">
-                                          <span className="text-[10px] font-bold uppercase text-neutral-400 tracking-widest">Gene Row Priority</span>
-                                          <UsefulnessControls 
-                                            symbol={t.symbol} 
-                                            source="overall" 
-                                            currentStatus={t.usefulness?.['overall']} 
-                                            onToggle={toggleUsefulness} 
-                                            theme={theme} 
-                                          />
-                                        </div>
-                                      </div>
-                                      {drillDownLoading === t.symbol ? (
-                                        <div className="flex items-center justify-center py-8 gap-3">
-                                          <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
-                                          <span className="text-[11px] font-bold uppercase text-neutral-500 tracking-widest">Fetching Deep Intelligence...</span>
-                                        </div>
-                                      ) : t.drillDown ? (
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-top-2 duration-300">
-                                          {/* Clinical Trials Section */}
-                                          {(t.usefulness?.['clinical'] === 'not-useful') ? null : (
-                                            <div className={`p-5 rounded-2xl border transition-all ${t.usefulness?.['clinical'] === 'pinned' ? 'border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/5 dark:bg-blue-900/5' : (theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm')}`}>
-                                              <div className="flex items-center justify-between mb-4">
-                                                <div className="flex items-center gap-2">
-                                                  <div className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-900/20"><Stethoscope className="w-4 h-4 text-rose-500" /></div>
-                                                  <h4 className="text-[11px] font-bold uppercase text-neutral-500 tracking-wider">ClinicalTrials.gov</h4>
-                                                </div>
-                                                <UsefulnessControls 
-                                                  symbol={t.symbol} 
-                                                  source="clinical" 
-                                                  currentStatus={t.usefulness?.['clinical']} 
-                                                  onToggle={toggleUsefulness} 
-                                                  theme={theme} 
-                                                />
-                                              </div>
-                                              <div className="space-y-4">
-                                                <div className="flex justify-between items-end">
-                                                  <span className="text-[10px] font-bold text-neutral-400 uppercase">Trial Count</span>
-                                                  <span className="text-xl font-black text-rose-600">{t.drillDown.trial_count}</span>
-                                                </div>
-                                                <div className="flex justify-between items-end">
-                                                  <span className="text-[10px] font-bold text-neutral-400 uppercase">Interventional</span>
-                                                  <span className="text-lg font-bold text-rose-500">{t.drillDown.interventional_count || 0}</span>
-                                                </div>
-                                                <div className="flex justify-between items-end">
-                                                  <span className="text-[10px] font-bold text-neutral-400 uppercase">Max Phase</span>
-                                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${theme === 'dark' ? 'bg-rose-900/30 text-rose-400' : 'bg-rose-50 text-rose-700'}`}>{t.drillDown.max_phase}</span>
-                                                </div>
-                                                <div className="flex justify-between items-center">
-                                                  <span className="text-[10px] font-bold text-neutral-400 uppercase">Active Trials</span>
-                                                  <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold ${t.drillDown.active_trial_present ? (theme === 'dark' ? 'bg-emerald-900/30 text-emerald-400' : 'bg-emerald-50 text-emerald-700') : (theme === 'dark' ? 'bg-neutral-800 text-neutral-500' : 'bg-neutral-100 text-neutral-500')}`}>
-                                                    <div className={`w-1.5 h-1.5 rounded-full ${t.drillDown.active_trial_present ? 'bg-emerald-500 animate-pulse' : 'bg-neutral-400'}`} />
-                                                    {t.drillDown.active_trial_present ? 'PRESENT' : 'NONE'}
-                                                  </div>
-                                                </div>
-
-                                                <div className="pt-4 border-t border-neutral-100 dark:border-neutral-800">
-                                                  <button 
-                                                    onClick={() => {
-                                                      setActiveClinicalDetailGene(t.symbol);
-                                                      setActiveScoreInfo('clinical');
-                                                    }}
-                                                    className="w-full py-2.5 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 text-[10px] font-bold uppercase tracking-widest hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-all flex items-center justify-center gap-2 group"
-                                                  >
-                                                    More Information
-                                                    <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                                                  </button>
-                                                </div>
-                                              </div>
-                                            </div>
-                                          )}
-
-                                          {/* Literature Section */}
-                                          {(t.usefulness?.['literature'] === 'not-useful') ? null : (
-                                            <div className={`p-5 rounded-2xl border transition-all ${t.usefulness?.['literature'] === 'pinned' ? 'border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/5 dark:bg-blue-900/5' : (theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm')}`}>
-                                              <div className="flex items-center justify-between mb-4">
-                                                <div className="flex items-center gap-2">
-                                                  <div className="p-1.5 rounded-lg bg-purple-50 dark:bg-purple-900/20"><BookOpen className="w-4 h-4 text-purple-500" /></div>
-                                                  <h4 className="text-[11px] font-bold uppercase text-neutral-500 tracking-wider">Europe PMC Literature</h4>
-                                                </div>
-                                                <UsefulnessControls 
-                                                  symbol={t.symbol} 
-                                                  source="literature" 
-                                                  currentStatus={t.usefulness?.['literature']} 
-                                                  onToggle={toggleUsefulness} 
-                                                  theme={theme} 
-                                                />
-                                              </div>
-                                              <div className="space-y-4">
-                                                <div className="flex justify-between items-end">
-                                                  <span className="text-[10px] font-bold text-neutral-400 uppercase">Paper Count</span>
-                                                  <span className="text-xl font-black text-purple-600">{t.drillDown.paper_count.toLocaleString()}</span>
-                                                </div>
-                                                <div className="flex justify-between items-end">
-                                                  <span className="text-[10px] font-bold text-neutral-400 uppercase">Recent (3y)</span>
-                                                  <span className="text-lg font-bold text-purple-500">{t.drillDown.recent_paper_count.toLocaleString()}</span>
-                                                </div>
-                                                <div className="flex justify-between items-end">
-                                                  <span className="text-[10px] font-bold text-neutral-400 uppercase">Latest Pub</span>
-                                                  <span className="text-[11px] font-mono font-bold text-neutral-600 dark:text-neutral-400">{t.drillDown.latest_publication_date}</span>
-                                                </div>
-                                              </div>
-                                            </div>
-                                          )}
-
-                                          {/* Literature Section */}
-                                        </div>
-                                      ) : (
-                                        <div className="text-center py-8 text-neutral-500 text-[11px] font-bold uppercase tracking-widest">Failed to load drill down data.</div>
-                                      )}
-                                    </td>
-                                  </tr>
-                                )}
                               </React.Fragment>
                             );
                           })}
@@ -2327,67 +2707,6 @@ const App = () => {
               )}
            </div>
         </section>
-        {researchState.focusSymbol && (<>
-          <aside className={`border-l flex flex-col gap-10 overflow-y-auto custom-scrollbar transition-all duration-300 relative ${isRightSidebarOpen ? 'w-[420px] opacity-100 p-8' : 'w-0 opacity-0 p-0 pointer-events-none'} ${theme === 'dark' ? 'bg-[#0d0d0d] border-neutral-800' : 'bg-white shadow-xl'}`}>
-            {(() => { const t = displayTargets.find(x => x.symbol === researchState.focusSymbol); if (!t) return null; return (<>
-              <div className="flex items-start justify-between border-b border-neutral-100 dark:border-neutral-800 pb-8">
-                <div className="space-y-1">
-                  <h3 className="text-5xl font-extrabold text-blue-600 dark:text-blue-500 tracking-tighter">{t.symbol}</h3>
-                  <p className={`text-[12px] font-bold uppercase tracking-wide ${theme === 'dark' ? 'text-neutral-500' : 'text-neutral-600'}`}>{t.name}</p>
-                  <UsefulnessControls 
-                    symbol={t.symbol} 
-                    source="overall" 
-                    currentStatus={t.usefulness?.['overall']} 
-                    onToggle={toggleUsefulness} 
-                    theme={theme} 
-                  />
-                </div>
-                <button onClick={() => setIsRightSidebarOpen(false)} className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors" title="Minimize">
-                  <ChevronRight className="w-5 h-5 text-neutral-400 hover:text-blue-600" />
-                </button>
-              </div>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-[10px] font-bold uppercase text-neutral-500 dark:text-neutral-400 tracking-widest">Molecular Radar</h4>
-                  <UsefulnessControls 
-                    symbol={t.symbol} 
-                    source="radar" 
-                    currentStatus={t.usefulness?.['radar']} 
-                    onToggle={toggleUsefulness} 
-                    theme={theme} 
-                  />
-                </div>
-                <div className={`p-8 rounded-3xl border shadow-inner ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-neutral-50 border-neutral-200'}`}>
-                  <RadarChart target={t} theme={theme} />
-                </div>
-              </div>
-              <DrugLandscape 
-                targetId={t.id} 
-                symbol={t.symbol}
-                theme={theme} 
-                currentStatus={t.usefulness?.['clinical']}
-                onToggle={toggleUsefulness}
-              />
-              <LiteratureStats 
-                symbol={t.symbol} 
-                diseaseName={researchState.activeDisease?.name || "Evidence"} 
-                theme={theme} 
-                currentStatus={t.usefulness?.['literature']}
-                onToggle={toggleUsefulness}
-              />
-            </>) })()}
-          </aside>
-          {!isRightSidebarOpen && (
-            <button 
-              onClick={() => setIsRightSidebarOpen(true)} 
-              className="absolute right-0 top-1/2 -translate-y-1/2 z-20 p-2.5 rounded-l-xl bg-blue-600 text-white shadow-2xl hover:pl-6 transition-all group flex items-center gap-2"
-              title="Show Analysis Details"
-            >
-              <ChevronLeft className="w-5 h-5" />
-              <span className="text-[10px] font-bold uppercase hidden group-hover:block whitespace-nowrap pr-2 tracking-widest">Evidence</span>
-            </button>
-          )}
-        </>)}
       </main>
 
       {/* Score Information Drawer */}
