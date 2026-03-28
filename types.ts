@@ -4,22 +4,22 @@ export interface Pathway {
 }
 
 export interface DrillDownData {
-  trial_count: number;
-  interventional_count?: number;
-  max_phase: string;
-  active_trial_present: boolean;
   paper_count: number;
   recent_paper_count: number;
   latest_publication_date: string;
+  total_signals?: number;
+  recent_signals?: number;
+  signal_velocity?: string;
+  top_papers?: { title: string; id: string }[];
+  trial_count?: number;
+  max_phase?: string;
+  active_trial_present?: boolean;
+  interventional_count?: number;
   phase_breakdown?: Record<string, number>;
   top_conditions?: { name: string; count: number }[];
   top_drugs?: { name: string; count: number }[];
   sponsor_breakdown?: Record<string, number>;
   clinical_summary?: string;
-  total_signals?: number;
-  recent_signals?: number;
-  signal_velocity?: string;
-  top_papers?: { title: string; id: string }[];
 }
 
 export interface Target {
@@ -27,14 +27,14 @@ export interface Target {
   symbol: string;
   name: string;
   overallScore: number;
+  getScore?: number;
   geneticScore: number;
   expressionScore: number;
   literatureScore?: number;
-  clinicalScore?: number;
-  noveltyScore?: number;
   baselineExpression?: number; 
   combinedExpression?: number; 
   targetScore: number; 
+  priorityScore?: number;
   pathways: Pathway[];
   drillDown?: DrillDownData;
   usefulness?: Record<string, 'useful' | 'not-useful' | 'pinned'>;

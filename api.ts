@@ -5,6 +5,23 @@ const OPEN_TARGETS_API = 'https://api.platform.opentargets.org/api/v4/graphql';
 const ENRICHR_API = 'https://maayanlab.cloud/Enrichr';
 const PUBMED_API = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils';
 
+const fetchWithRetry = async (url: string, options: RequestInit = {}, retries: number = 3, backoff: number = 1000): Promise<Response> => {
+  try {
+    const res = await fetch(url, options);
+    if (res.status === 429 && retries > 0) {
+      await new Promise(resolve => setTimeout(resolve, backoff));
+      return fetchWithRetry(url, options, retries - 1, backoff * 2);
+    }
+    return res;
+  } catch (err) {
+    if (retries > 0) {
+      await new Promise(resolve => setTimeout(resolve, backoff));
+      return fetchWithRetry(url, options, retries - 1, backoff * 2);
+    }
+    throw err;
+  }
+};
+
 export const api = {
   async searchDiseases(query: string): Promise<DiseaseInfo[]> {
     const GQL_QUERY = `
@@ -70,6 +87,11 @@ export const api = {
                   tissue { label }
                   rna { value }
                 }
+                tractability {
+                  label
+                  modality
+                  value
+                }
               }
               score
               datatypeScores { id score }
@@ -78,53 +100,94 @@ export const api = {
         }
       }
     `;
+
     try {
       const res = await fetch(OPEN_TARGETS_API, { 
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify({ query: GQL_QUERY, variables: { efoId, size, page } }) 
       });
       const data = await res.json();
       const rows = data.data?.disease?.associatedTargets?.rows || [];
       const seen = new Set();
       const uniqueTargets: Target[] = [];
+
       for (const r of rows) {
         if (!seen.has(r.target.id)) {
           seen.add(r.target.id);
-          const geneticScore = r.datatypeScores.find((s:any) => s.id.includes('genetic'))?.score || 0;
-          const expressionScore = r.datatypeScores.find((s:any) => s.id.includes('rna'))?.score || 0;
-          const targetScore = r.datatypeScores.find((s:any) => s.id.includes('drug'))?.score || 0;
-          const literatureScore = r.datatypeScores.find((s:any) => s.id.includes('literature'))?.score || 0;
-          const clinicalScore = r.datatypeScores.find((s:any) => s.id.includes('known_drug'))?.score || 0;
-          const noveltyScore = 1 - literatureScore;
 
-          const expressions = r.target.expressions || [];
-          const brainTissues = ['brain', 'cortex', 'hippocampus', 'cerebellum'];
-          const relevant = expressions.filter((e: any) => 
-            brainTissues.some(bt => e.tissue.label.toLowerCase().includes(bt))
+          // G
+          const geneticScore = Math.max(
+            r.datatypeScores.find((s: any) => s.id === 'genetic_association')?.score || 0,
+            r.datatypeScores.find((s: any) => s.id === 'somatic_mutation')?.score || 0,
+            r.datatypeScores.find((s: any) => s.id === 'genetic_literature')?.score || 0
           );
-          let baselineValue = 0;
-          if (relevant.length > 0) {
-            const avgTPM = relevant.reduce((acc: number, curr: any) => acc + (curr.rna?.value || 0), 0) / relevant.length;
-            baselineValue = Math.min(1, Math.log10(avgTPM + 1) / 2);
+
+          // E — your expression logic
+          const vals = (r.target.expressions || [])
+            .map((e: any) => e.rna?.value || 0)
+            .filter((v: number) => v > 0)
+            .sort((a: number, b: number) => b - a);
+          let expressionScore = 0;
+          if (vals.length > 0) {
+            const top1 = vals[0];
+            const top3avg = vals.slice(0, 3).reduce((a: number, b: number) => a + b, 0) / Math.min(3, vals.length);
+            const meanAll = vals.reduce((a: number, b: number) => a + b, 0) / vals.length;
+            const strength = Math.min(1, Math.log10(top3avg + 1) / 4);
+            const selectivity = meanAll > 0
+              ? Math.min(1, Math.log10((top1 / meanAll) + 1) / Math.log10(6))
+              : 0;
+            expressionScore = strength * 0.7 + selectivity * 0.3;
           }
+
+          // T — tractability hierarchy
+          const tractability = r.target.tractability || [];
+          const score = (modality: string, label: string) =>
+            tractability.some((t: any) => t.modality === modality && t.label === label && t.value === true);
+          const targetScore = (() => {
+            if (score('SM', 'Approved Drug') || score('AB', 'Approved Drug') || score('PR', 'Approved Drug')) return 1.0;
+            if (score('SM', 'Advanced Clinical') || score('AB', 'Advanced Clinical') || score('PR', 'Advanced Clinical')) return 0.85;
+            if (score('SM', 'Phase 1 Clinical') || score('AB', 'Phase 1 Clinical') || score('PR', 'Phase 1 Clinical')) return 0.70;
+            if (score('SM', 'Structure with Ligand') || score('SM', 'High-Quality Ligand')) return 0.55;
+            if (score('SM', 'High-Quality Pocket') || score('SM', 'Med-Quality Pocket')) return 0.40;
+            if (score('SM', 'Druggable Family')) return 0.25;
+            return 0.1;
+          })();
+
+          // Literature — working fine, keep as is
+          const literatureScore = r.datatypeScores.find(
+            (s: any) => s.id === 'literature'
+          )?.score || 0;
+
+          // GET Score
+          const getScore = (
+            geneticScore * 0.50 +
+            expressionScore * 0.25 +
+            targetScore * 0.25
+          );
 
           uniqueTargets.push({
             id: r.target.id,
             symbol: r.target.approvedSymbol,
             name: r.target.approvedName,
             overallScore: r.score,
+            getScore,
             geneticScore,
             expressionScore,
             literatureScore,
-            clinicalScore,
-            noveltyScore,
-            baselineExpression: baselineValue,
-            combinedExpression: Math.max(expressionScore, baselineValue),
+            baselineExpression: 0,
+            combinedExpression: expressionScore,
             targetScore,
-            pathways: r.target.pathways?.map((p:any) => ({ id: p.pathway, label: p.pathway })) || []
+            pathways: r.target.pathways?.map((p: any) => ({ 
+              id: p.pathway, label: p.pathway 
+            })) || []
           });
         }
       }
+
+      // Sort by GET Score
+      uniqueTargets.sort((a, b) => (b.getScore ?? 0) - (a.getScore ?? 0));
+
       return uniqueTargets;
     } catch (err) { return []; }
   },
@@ -176,9 +239,9 @@ export const api = {
 
     try {
       const [totalData, recentData] = await Promise.all([
-        fetch(`${PUBMED_API}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(baseQuery)}&retmode=json${apiKeyParam}`)
+        fetchWithRetry(`${PUBMED_API}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(baseQuery)}&retmode=json${apiKeyParam}`)
           .then(r => r.json()),
-        fetch(`${PUBMED_API}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(recentQuery)}&retmode=json${apiKeyParam}`)
+        fetchWithRetry(`${PUBMED_API}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(recentQuery)}&retmode=json${apiKeyParam}`)
           .then(r => r.json())
       ]);
 
@@ -188,7 +251,7 @@ export const api = {
 
       let topPapers: { title: string; id: string }[] = [];
       if (recentIds) {
-        const summaryData = await fetch(
+        const summaryData = await fetchWithRetry(
           `${PUBMED_API}/esummary.fcgi?db=pubmed&id=${recentIds}&retmode=json${apiKeyParam}`
         ).then(r => r.json());
 
@@ -218,7 +281,7 @@ export const api = {
     };
 
     try {
-      // 1. ClinicalTrials.gov API v2
+      // ClinicalTrials.gov API v2
       try {
         const fields = [
           'protocolSection.identificationModule.nctId',
@@ -240,16 +303,13 @@ export const api = {
           const ctData = await ctRes.json();
           const studies = ctData.studies || [];
 
-          // 1. Trial count
           drillDown.trial_count = ctData.totalCount ?? studies.length;
 
-          // 2. Filter for Interventional Studies
           const interventionalStudies = studies.filter((s: any) =>
             s.protocolSection?.designModule?.studyType === 'INTERVENTIONAL'
           );
           drillDown.interventional_count = interventionalStudies.length;
 
-          // 3. Max phase and breakdown (ONLY on interventional studies)
           const phaseOrder = ['EARLY_PHASE1', 'PHASE1', 'PHASE2', 'PHASE3', 'PHASE4'];
           let maxPhaseIdx = -1;
           const phaseBreakdown: Record<string, number> = { 'EARLY_PHASE1': 0, 'PHASE1': 0, 'PHASE2': 0, 'PHASE3': 0, 'PHASE4': 0 };
@@ -265,13 +325,11 @@ export const api = {
               if (phaseBreakdown[p] !== undefined) phaseBreakdown[p]++;
             });
 
-            // Conditions
             const conds = s.protocolSection?.conditionsModule?.conditions || [];
             conds.forEach((c: string) => {
               conditionsMap[c] = (conditionsMap[c] || 0) + 1;
             });
 
-            // Drugs (Better approach: filter by type)
             const interventions = s.protocolSection?.armsInterventionsModule?.interventions || [];
             interventions
               .filter((i: any) => i.type === 'DRUG' || i.type === 'BIOLOGICAL')
@@ -281,14 +339,12 @@ export const api = {
               });
           });
 
-          // Sponsors (Dynamic calculation on all studies)
           studies.forEach((s: any) => {
             const cls = s.protocolSection?.sponsorCollaboratorsModule?.leadSponsor?.class;
             if (cls) {
-              // normalize FED/U_S_FED → NIH bucket
               const label = (cls === 'NIH' || cls === 'FED' || cls === 'U_S_FED') 
                 ? 'NIH' 
-                : cls; // INDUSTRY, OTHER, INDIV, NETWORK stay as-is
+                : cls;
               sponsorMap[label] = (sponsorMap[label] || 0) + 1;
             }
           });
@@ -299,13 +355,7 @@ export const api = {
           drillDown.top_drugs = Object.entries(drugsMap).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name, count }));
           drillDown.sponsor_breakdown = sponsorMap;
 
-          // 4. Active trial present
-          const activeStatuses = [
-            'RECRUITING',
-            'ACTIVE_NOT_RECRUITING',
-            'ENROLLING_BY_INVITATION'
-          ];
-
+          const activeStatuses = ['RECRUITING', 'ACTIVE_NOT_RECRUITING', 'ENROLLING_BY_INVITATION'];
           drillDown.active_trial_present = studies.some((s: any) =>
             activeStatuses.includes(s.protocolSection?.statusModule?.overallStatus)
           );
@@ -314,7 +364,7 @@ export const api = {
         console.error('ClinicalTrials fetch failed:', err);
       }
 
-      // 3. AI Summary
+      // AI Summary
       try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const prompt = `Based on the following clinical trial data for the gene ${symbol} in the context of ${diseaseName}:
@@ -336,15 +386,15 @@ export const api = {
         console.error("AI Clinical Summary failed", e);
       }
 
-      // 4. Europe PMC
+      // Europe PMC
       const currentYear = new Date().getFullYear();
       const threeYearsAgo = currentYear - 3;
       const epQuery = `${symbol} AND "${diseaseName}"`;
       const epRecentQuery = `${symbol} AND "${diseaseName}" AND FIRST_PDATE:[${threeYearsAgo}-01-01 TO ${currentYear}-12-31]`;
       
       const [epTotalRes, epRecentRes] = await Promise.all([
-        fetch(`https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=${encodeURIComponent(epQuery)}&format=json&pageSize=1&sort_date:y`),
-        fetch(`https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=${encodeURIComponent(epRecentQuery)}&format=json&pageSize=1`)
+        fetchWithRetry(`https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=${encodeURIComponent(epQuery)}&format=json&pageSize=1&sort_date:y`),
+        fetchWithRetry(`https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=${encodeURIComponent(epRecentQuery)}&format=json&pageSize=1`)
       ]);
 
       if (epTotalRes.ok) {
@@ -361,16 +411,16 @@ export const api = {
         drillDown.recent_paper_count = epRecentData.hitCount || 0;
       }
 
-      // 5. PubMed Stats for "Clinical Publication Insights"
+      // PubMed Stats
       try {
         const apiKeyParam = process.env.NCBI_API_KEY ? `&api_key=${process.env.NCBI_API_KEY}` : '';
         const baseQuery = `("${diseaseName}"[Title/Abstract]) AND ("${symbol}"[Title/Abstract])`;
         const recentQuery = `${baseQuery} AND ("2024"[Date - Publication] : "2025"[Date - Publication])`;
 
         const [totalData, recentData] = await Promise.all([
-          fetch(`${PUBMED_API}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(baseQuery)}&retmode=json${apiKeyParam}`)
+          fetchWithRetry(`${PUBMED_API}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(baseQuery)}&retmode=json${apiKeyParam}`)
             .then(r => r.json()),
-          fetch(`${PUBMED_API}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(recentQuery)}&retmode=json${apiKeyParam}`)
+          fetchWithRetry(`${PUBMED_API}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(recentQuery)}&retmode=json${apiKeyParam}`)
             .then(r => r.json())
         ]);
 
@@ -383,7 +433,7 @@ export const api = {
         drillDown.signal_velocity = total > 0 ? ((recent / total) * 100).toFixed(1) + '%' : '0%';
 
         if (recentIds) {
-          const summaryData = await fetch(
+          const summaryData = await fetchWithRetry(
             `${PUBMED_API}/esummary.fcgi?db=pubmed&id=${recentIds}&retmode=json${apiKeyParam}`
           ).then(r => r.json());
 

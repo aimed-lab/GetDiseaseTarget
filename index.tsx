@@ -48,6 +48,8 @@ import {
   FileText,
   Pill,
   Stethoscope,
+  Users,
+  Building2,
   ZoomIn,
   ZoomOut,
   RotateCcw,
@@ -154,9 +156,8 @@ const RadarChart = ({ target, theme }: { target: Target, theme: Theme }) => {
   
   const axes = [
     { label: 'Genetic', val: target.geneticScore, color: 'text-blue-500', bg: 'bg-blue-500/10' },
-    { label: 'Clinical', val: target.clinicalScore || 0, color: 'text-rose-500', bg: 'bg-rose-500/10' },
     { label: 'Literature', val: target.literatureScore || 0, color: 'text-purple-500', bg: 'bg-purple-500/10' },
-    { label: 'Novelty', val: target.noveltyScore || 0, color: 'text-indigo-500', bg: 'bg-indigo-500/10' },
+    { label: 'GET Score', val: target.getScore || 0, color: 'text-indigo-500', bg: 'bg-indigo-500/10' },
     { label: 'Expression', val: target.combinedExpression || 0, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
     { label: 'Target', val: target.targetScore || 0, color: 'text-amber-500', bg: 'bg-amber-500/10' },
     { label: 'Priority', val: target.overallScore, color: 'text-blue-600', bg: 'bg-blue-600/10' }
@@ -736,7 +737,7 @@ const LiteratureStats = ({
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div className={`p-4 rounded-lg border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-neutral-50 border-neutral-200 shadow-sm'}`}>
-          <div className="text-[9px] font-bold text-neutral-500 dark:text-neutral-400 uppercase mb-1">Total Signals</div>
+          <div className="text-[9px] font-bold text-neutral-500 dark:text-neutral-400 uppercase mb-1">Literature Count</div>
           <div className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-neutral-900'}`}>{stats.total.toLocaleString()}</div>
         </div>
         <a href={stats.primarySearchLink} target="_blank" rel="noopener noreferrer" className={`p-4 rounded-lg border block hover:bg-blue-100/50 transition-colors ${theme === 'dark' ? 'bg-blue-900/5 border-blue-500/20' : 'bg-blue-50 border-blue-100 shadow-sm'}`}>
@@ -749,7 +750,7 @@ const LiteratureStats = ({
       </div>
       <div className={`p-4 rounded-lg border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-neutral-50 border-neutral-200 shadow-sm'}`}>
         <div className="flex items-center justify-between mb-2">
-          <span className="text-[9px] font-bold uppercase text-neutral-500 dark:text-neutral-400">Signal Velocity</span>
+          <span className="text-[9px] font-bold uppercase text-neutral-500 dark:text-neutral-400">Velocity (2y)</span>
           <Activity className="w-3 h-3 text-blue-500" />
         </div>
         <PublicationSparkline recent={stats.recent} total={stats.total} theme={theme} />
@@ -823,7 +824,7 @@ const Breadcrumbs = ({
 }: { 
   activeDisease?: DiseaseInfo | null; 
   focusSymbol?: string | null; 
-  focusSubPage?: 'main' | 'clinical' | 'literature' | null;
+  focusSubPage?: 'main' | 'literature' | 'clinical' | null;
   onNavigate: (level: 'home' | 'disease' | 'target' | 'subpage') => void;
   theme: Theme;
 }) => {
@@ -863,12 +864,12 @@ const Breadcrumbs = ({
         </>
       )}
 
-      {focusSymbol && focusSubPage && focusSubPage !== 'main' && (
+      {focusSymbol && focusSubPage === 'literature' && (
         <>
           <ChevronRight className="w-3 h-3 text-neutral-300 dark:text-neutral-700 shrink-0" />
           <div className="flex items-center gap-1.5 text-blue-600 bg-blue-50/50 dark:bg-blue-900/10 px-2 py-1 rounded-md whitespace-nowrap">
-            {focusSubPage === 'clinical' ? <Stethoscope className="w-3.5 h-3.5" /> : <BookOpen className="w-3.5 h-3.5" />}
-            {focusSubPage === 'clinical' ? 'Clinical Intelligence' : 'Literature Intelligence'}
+            <BookOpen className="w-3.5 h-3.5" />
+            Literature Intelligence
           </div>
         </>
       )}
@@ -888,143 +889,11 @@ const TargetDetailView = ({
   target: Target; 
   theme: Theme; 
   diseaseName: string;
-  subPage?: 'main' | 'clinical' | 'literature';
+  subPage?: 'main' | 'literature' | 'clinical';
   onToggleUsefulness: (symbol: string, source: string, status: 'useful' | 'not-useful' | 'pinned' | null) => void;
-  onNavigateSubPage: (page: 'main' | 'clinical' | 'literature') => void;
+  onNavigateSubPage: (page: 'main' | 'literature' | 'clinical') => void;
   onBack: () => void;
 }) => {
-  if (subPage === 'clinical') {
-    return (
-      <div className="h-full flex flex-col overflow-hidden animate-in fade-in slide-in-from-right-4 duration-500">
-        <div className={`p-6 border-b flex items-center justify-between ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-100'}`}>
-          <div className="flex items-center gap-4">
-            <button 
-              onClick={() => onNavigateSubPage('main')}
-              className="p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-            >
-              <ChevronLeft className="w-5 h-5 text-neutral-400" />
-            </button>
-            <div className="space-y-1">
-              <h3 className="text-2xl font-black text-rose-600 dark:text-rose-400 tracking-tighter flex items-center gap-2">
-                <Stethoscope className="w-6 h-6" /> Clinical Intelligence: {target.symbol}
-              </h3>
-              <p className="text-[10px] font-bold uppercase text-neutral-400 tracking-widest">In-depth trial landscape and regulatory progress</p>
-            </div>
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-          <div className="max-w-4xl mx-auto space-y-10">
-            {target.drillDown ? (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className={`p-6 rounded-2xl border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}>
-                    <span className="text-[10px] font-bold text-neutral-400 uppercase block mb-1">Total Trials</span>
-                    <span className="text-3xl font-black text-rose-600">{target.drillDown.trial_count}</span>
-                  </div>
-                  <div className={`p-6 rounded-2xl border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}>
-                    <span className="text-[10px] font-bold text-neutral-400 uppercase block mb-1">Max Phase</span>
-                    <span className="text-3xl font-black text-rose-600">{target.drillDown.max_phase}</span>
-                  </div>
-                  <div className={`p-6 rounded-2xl border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}>
-                    <span className="text-[10px] font-bold text-neutral-400 uppercase block mb-1">Active Status</span>
-                    <span className={`text-xl font-black ${target.drillDown.active_trial_present ? 'text-green-600' : 'text-neutral-400'}`}>
-                      {target.drillDown.active_trial_present ? 'RECRUITING' : 'INACTIVE'}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                   <div className="space-y-4">
-                      <h4 className="text-[12px] font-bold uppercase text-neutral-500 tracking-widest">Phase Breakdown</h4>
-                      <div className="h-[250px]">
-                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={Object.entries(target.drillDown.phase_breakdown || {}).map(([k,v]) => ({name: k.replace('PHASE', 'P'), value: v}))}>
-                               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#333' : '#eee'} />
-                               <XAxis dataKey="name" tick={{fontSize: 10, fontWeight: 'bold'}} axisLine={false} tickLine={false} />
-                               <YAxis tick={{fontSize: 10, fontWeight: 'bold'}} axisLine={false} tickLine={false} />
-                               <RechartsTooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}} />
-                               <Bar dataKey="value" fill="#e11d48" radius={[4, 4, 0, 0]} />
-                            </BarChart>
-                         </ResponsiveContainer>
-                      </div>
-                   </div>
-                   <div className="space-y-4">
-                      <h4 className="text-[12px] font-bold uppercase text-neutral-500 tracking-widest">Sponsor Profile</h4>
-                      <div className="h-[250px]">
-                         <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                               <Pie
-                                  data={Object.entries(target.drillDown.sponsor_breakdown || {}).map(([k,v]) => ({name: k, value: v}))}
-                                  innerRadius={60}
-                                  outerRadius={80}
-                                  paddingAngle={5}
-                                  dataKey="value"
-                               >
-                                  {Object.entries(target.drillDown.sponsor_breakdown || {}).map((_, index) => (
-                                    <Cell key={`cell-${index}`} fill={['#e11d48', '#f43f5e', '#fb7185', '#fda4af', '#fecdd3'][index % 5]} />
-                                  ))}
-                               </Pie>
-                               <RechartsTooltip />
-                               <Legend verticalAlign="bottom" height={36}/>
-                            </PieChart>
-                         </ResponsiveContainer>
-                      </div>
-                   </div>
-                </div>
-
-                <div className="pt-10 space-y-4">
-                  <h4 className="text-[12px] font-bold uppercase text-neutral-500 tracking-widest">Pipeline Evidence</h4>
-                  <DrugLandscape 
-                    targetId={target.id} 
-                    symbol={target.symbol}
-                    theme={theme} 
-                    currentStatus={target.usefulness?.['clinical']}
-                    onToggle={onToggleUsefulness}
-                  />
-                </div>
-
-                <div className="pt-10 space-y-4">
-                  <h4 className="text-[12px] font-bold uppercase text-neutral-500 tracking-widest">External Clinical Registries</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <a 
-                      href={`https://clinicaltrials.gov/search?cond=${encodeURIComponent(diseaseName)}&term=${encodeURIComponent(target.symbol)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center justify-between p-5 rounded-2xl border border-neutral-200 dark:border-neutral-800 hover:bg-rose-50 dark:hover:bg-rose-900/10 transition-all group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl bg-rose-100 dark:bg-rose-900/30 text-rose-600"><Database className="w-5 h-5" /></div>
-                        <div className="text-left">
-                          <span className="text-[11px] font-black text-neutral-800 dark:text-neutral-200 block">ClinicalTrials.gov</span>
-                          <span className="text-[9px] font-bold text-neutral-400 uppercase">US National Library of Medicine</span>
-                        </div>
-                      </div>
-                      <ExternalLink className="w-4 h-4 text-neutral-300 group-hover:text-rose-500 transition-colors" />
-                    </a>
-                  </div>
-                </div>
-
-                <div className="pt-10 space-y-4">
-                  <h4 className="text-[12px] font-bold uppercase text-neutral-500 tracking-widest border-b pb-2">Regulatory & Clinical Summary</h4>
-                  <div className={`p-8 rounded-3xl border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-neutral-50/50 border-neutral-200'}`}>
-                    <p className="text-lg text-neutral-800 dark:text-neutral-200 leading-relaxed italic">
-                      "{target.drillDown.clinical_summary || 'No clinical summary available for this target.'}"
-                    </p>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="flex flex-col items-center justify-center p-20 text-center">
-                <Loader2 className="w-10 h-10 animate-spin text-rose-500 mb-4" />
-                <p className="text-sm font-bold text-neutral-500 uppercase tracking-widest">Synthesizing Clinical Data...</p>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   if (subPage === 'literature') {
     return (
       <div className="h-full flex flex-col overflow-hidden animate-in fade-in slide-in-from-right-4 duration-500">
@@ -1050,7 +919,7 @@ const TargetDetailView = ({
               <>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className={`p-6 rounded-2xl border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}>
-                    <span className="text-[10px] font-bold text-neutral-400 uppercase block mb-1">Total Signals</span>
+                    <span className="text-[10px] font-bold text-neutral-400 uppercase block mb-1">Literature Count</span>
                     <span className="text-3xl font-black text-purple-600">{target.drillDown.total_signals || 0}</span>
                   </div>
                   <div className={`p-6 rounded-2xl border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}>
@@ -1058,7 +927,7 @@ const TargetDetailView = ({
                     <span className="text-3xl font-black text-purple-600">{target.drillDown.recent_signals || 0}</span>
                   </div>
                   <div className={`p-6 rounded-2xl border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}>
-                    <span className="text-[10px] font-bold text-neutral-400 uppercase block mb-1">Signal Velocity</span>
+                    <span className="text-[10px] font-bold text-neutral-400 uppercase block mb-1">Velocity (2y)</span>
                     <span className="text-2xl font-black text-purple-600">{target.drillDown.signal_velocity || '0%'}</span>
                   </div>
                 </div>
@@ -1122,6 +991,159 @@ const TargetDetailView = ({
     );
   }
 
+  if (subPage === 'clinical') {
+    return (
+      <div className="h-full flex flex-col overflow-hidden animate-in fade-in slide-in-from-right-4 duration-500">
+        <div className={`p-6 border-b flex items-center justify-between ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-100'}`}>
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => onNavigateSubPage('main')}
+              className="p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+            >
+              <ChevronLeft className="w-5 h-5 text-neutral-400" />
+            </button>
+            <div className="space-y-1">
+              <h3 className="text-2xl font-black text-emerald-600 dark:text-emerald-400 tracking-tighter flex items-center gap-2">
+                <Activity className="w-6 h-6" /> Clinical Trial Intelligence: {target.symbol}
+              </h3>
+              <p className="text-[10px] font-bold uppercase text-neutral-400 tracking-widest">Deep insights from ClinicalTrials.gov and AI synthesis</p>
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+          <div className="max-w-4xl mx-auto space-y-10">
+            {target.drillDown ? (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                  <div className={`p-6 rounded-2xl border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}>
+                    <span className="text-[10px] font-bold text-neutral-400 uppercase block mb-1">Total Trials</span>
+                    <span className="text-3xl font-black text-emerald-600">{target.drillDown.trial_count || 0}</span>
+                  </div>
+                  <div className={`p-6 rounded-2xl border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}>
+                    <span className="text-[10px] font-bold text-neutral-400 uppercase block mb-1">Max Phase</span>
+                    <span className="text-3xl font-black text-emerald-600">{target.drillDown.max_phase || 'N/A'}</span>
+                  </div>
+                  <div className={`p-6 rounded-2xl border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}>
+                    <span className="text-[10px] font-bold text-neutral-400 uppercase block mb-1">Interventional</span>
+                    <span className="text-3xl font-black text-emerald-600">{target.drillDown.interventional_count || 0}</span>
+                  </div>
+                  <div className={`p-6 rounded-2xl border ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}>
+                    <span className="text-[10px] font-bold text-neutral-400 uppercase block mb-1">Active Trials</span>
+                    <span className="text-3xl font-black text-emerald-600">{target.drillDown.active_trial_present ? 'YES' : 'NO'}</span>
+                  </div>
+                </div>
+
+                {target.drillDown.clinical_summary && (
+                  <div className={`p-8 rounded-3xl border border-dashed ${theme === 'dark' ? 'bg-blue-900/10 border-blue-500/30' : 'bg-blue-50 border-blue-200'}`}>
+                    <div className="flex items-center gap-3 mb-4">
+                      <ShieldCheck className="w-6 h-6 text-blue-500" />
+                      <h4 className="text-[12px] font-bold uppercase text-blue-600 tracking-widest">AI Clinical Synthesis</h4>
+                    </div>
+                    <p className={`text-lg leading-relaxed font-medium italic ${theme === 'dark' ? 'text-neutral-200' : 'text-neutral-800'}`}>
+                      "{target.drillDown.clinical_summary}"
+                    </p>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                  <div className="space-y-6">
+                    <h4 className="text-[12px] font-bold uppercase text-neutral-500 tracking-widest border-b pb-2 flex items-center gap-2">
+                      <Stethoscope className="w-4 h-4" /> Top Conditions
+                    </h4>
+                    <div className="space-y-3">
+                      {target.drillDown.top_conditions?.map((c, i) => (
+                        <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-neutral-50 dark:bg-neutral-900/50 border border-neutral-100 dark:border-neutral-800">
+                          <span className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 line-clamp-1">{c.name}</span>
+                          <span className="px-2 py-1 rounded-lg bg-blue-500/10 text-[10px] font-black text-blue-600">{c.count} Trials</span>
+                        </div>
+                      )) || <p className="text-[11px] text-neutral-400 italic">No condition data available</p>}
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <h4 className="text-[12px] font-bold uppercase text-neutral-500 tracking-widest border-b pb-2 flex items-center gap-2">
+                      <Pill className="w-4 h-4" /> Top Investigational Drugs
+                    </h4>
+                    <div className="space-y-3">
+                      {target.drillDown.top_drugs?.map((d, i) => (
+                        <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-neutral-50 dark:bg-neutral-900/50 border border-neutral-100 dark:border-neutral-800">
+                          <span className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 line-clamp-1">{d.name}</span>
+                          <span className="px-2 py-1 rounded-lg bg-emerald-500/10 text-[10px] font-black text-emerald-600">{d.count} Trials</span>
+                        </div>
+                      )) || <p className="text-[11px] text-neutral-400 italic">No drug data available</p>}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                  <div className="space-y-6">
+                    <h4 className="text-[12px] font-bold uppercase text-neutral-500 tracking-widest border-b pb-2 flex items-center gap-2">
+                      <Layers className="w-4 h-4" /> Phase Breakdown
+                    </h4>
+                    <div className="space-y-2">
+                      {Object.entries(target.drillDown.phase_breakdown || {}).map(([phase, count]) => (
+                        <div key={phase} className="flex items-center gap-4">
+                          <span className="text-[10px] font-bold text-neutral-400 uppercase w-24">{phase.replace('_', ' ')}</span>
+                          <div className="flex-1 h-2 bg-neutral-100 dark:bg-neutral-800 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-emerald-500" 
+                              style={{ width: `${(count / (target.drillDown?.trial_count || 1)) * 100}%` }}
+                            />
+                          </div>
+                          <span className="text-[10px] font-bold text-neutral-600 dark:text-neutral-400">{count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <h4 className="text-[12px] font-bold uppercase text-neutral-500 tracking-widest border-b pb-2 flex items-center gap-2">
+                      <Building2 className="w-4 h-4" /> Sponsor Breakdown
+                    </h4>
+                    <div className="flex flex-wrap gap-3">
+                      {Object.entries(target.drillDown.sponsor_breakdown || {}).map(([sponsor, count]) => (
+                        <div key={sponsor} className="px-4 py-2 rounded-2xl bg-neutral-50 dark:bg-neutral-900/50 border border-neutral-100 dark:border-neutral-800 flex flex-col items-center min-w-[100px]">
+                          <span className="text-[16px] font-black text-neutral-800 dark:text-neutral-200">{count}</span>
+                          <span className="text-[9px] font-bold text-neutral-400 uppercase">{sponsor}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-10 space-y-4">
+                  <h4 className="text-[12px] font-bold uppercase text-neutral-500 tracking-widest">External Clinical Registries</h4>
+                  <a 
+                    href={`https://clinicaltrials.gov/search?cond=${encodeURIComponent(diseaseName)}&term=${encodeURIComponent(target.symbol)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between p-6 rounded-3xl border-2 border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 transition-all group"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 rounded-2xl bg-emerald-500 text-white shadow-lg shadow-emerald-500/20"><Activity className="w-6 h-6" /></div>
+                      <div className="text-left">
+                        <span className="text-[14px] font-black text-neutral-800 dark:text-neutral-200 block">ClinicalTrials.gov</span>
+                        <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">U.S. National Library of Medicine</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 text-emerald-600 font-bold text-[11px] uppercase tracking-tighter">
+                      View Full Registry <ExternalLink className="w-4 h-4" />
+                    </div>
+                  </a>
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center p-20 text-center">
+                <Loader2 className="w-10 h-10 animate-spin text-emerald-500 mb-4" />
+                <p className="text-sm font-bold text-neutral-500 uppercase tracking-widest">Synthesizing Clinical Intelligence...</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-full flex flex-col overflow-hidden animate-in fade-in slide-in-from-right-4 duration-500">
       <div className={`p-6 border-b flex items-center justify-between ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-100'}`}>
@@ -1138,6 +1160,11 @@ const TargetDetailView = ({
               <div className="px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 text-[10px] font-bold text-blue-600 uppercase">
                 Score: {target.overallScore.toFixed(4)}
               </div>
+              {target.drillDown?.trial_count && target.drillDown.trial_count > 0 && (
+                <div className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-bold text-emerald-600 uppercase flex items-center gap-1">
+                  <Activity className="w-3 h-3" /> {target.drillDown.trial_count} Clinical Trials
+                </div>
+              )}
             </div>
             <p className={`text-[12px] font-bold uppercase tracking-wide ${theme === 'dark' ? 'text-neutral-500' : 'text-neutral-600'}`}>{target.name}</p>
           </div>
@@ -1157,7 +1184,10 @@ const TargetDetailView = ({
       <div className="flex-1 overflow-y-auto p-8 space-y-10 custom-scrollbar">
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h4 className="text-[10px] font-bold uppercase text-neutral-500 dark:text-neutral-400 tracking-widest">Molecular Radar</h4>
+            <div>
+              <h4 className="text-[10px] font-bold uppercase text-neutral-500 dark:text-neutral-400 tracking-widest">Molecular Radar</h4>
+              <span className="text-[9px] font-bold text-neutral-400 uppercase block mt-1">Source: Open Targets</span>
+            </div>
             <UsefulnessControls 
               symbol={target.symbol} 
               source="radar" 
@@ -1173,36 +1203,8 @@ const TargetDetailView = ({
 
         {target.drillDown ? (
           <div className="pt-10 border-t border-neutral-100 dark:border-neutral-800">
-            <h4 className="text-[10px] font-bold uppercase text-neutral-500 dark:text-neutral-400 tracking-widest mb-6">Deep Evidence Intelligence</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {/* Clinical Trials Section */}
-              <div 
-                onClick={() => onNavigateSubPage('clinical')}
-                className={`p-6 rounded-2xl border cursor-pointer transition-all hover:ring-2 hover:ring-rose-500/50 hover:shadow-lg ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-900/20"><Stethoscope className="w-4 h-4 text-rose-500" /></div>
-                    <h4 className="text-[11px] font-bold uppercase text-neutral-500 tracking-wider">Clinical Trials</h4>
-                  </div>
-                  <div className="text-[9px] font-bold text-rose-600 uppercase tracking-tighter">Click for Details</div>
-                </div>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-end"><span className="text-[10px] font-bold text-neutral-400 uppercase">Trial Count</span><span className="text-xl font-black text-rose-600">{target.drillDown.trial_count}</span></div>
-                  <div className="flex justify-between items-end"><span className="text-[10px] font-bold text-neutral-400 uppercase">Interventional</span><span className="text-lg font-bold text-rose-500">{target.drillDown.interventional_count || 0}</span></div>
-                  <div className="flex justify-between items-end"><span className="text-[10px] font-bold text-neutral-400 uppercase">Max Phase</span><span className={`px-2 py-0.5 rounded text-[10px] font-bold ${theme === 'dark' ? 'bg-rose-900/30 text-rose-400' : 'bg-rose-50 text-rose-700'}`}>{target.drillDown.max_phase}</span></div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-[10px] font-bold text-neutral-400 uppercase">Active Trials</span>
-                    <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold ${target.drillDown.active_trial_present ? (theme === 'dark' ? 'bg-emerald-900/30 text-emerald-400' : 'bg-emerald-50 text-emerald-700') : (theme === 'dark' ? 'bg-neutral-800 text-neutral-500' : 'bg-neutral-100 text-neutral-500')}`}>
-                      <div className={`w-1.5 h-1.5 rounded-full ${target.drillDown.active_trial_present ? 'bg-emerald-500 animate-pulse' : 'bg-neutral-400'}`} />
-                      {target.drillDown.active_trial_present ? 'PRESENT' : 'NONE'}
-                    </div>
-                  </div>
-                  <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800 flex items-center gap-2">
-                    <span className="text-[9px] font-bold text-neutral-400 uppercase">Source: ClinicalTrials.gov</span>
-                  </div>
-                </div>
-              </div>
+            <h4 className="text-[10px] font-bold uppercase text-neutral-500 dark:text-neutral-400 tracking-widest mb-6">Evidence summary</h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 
               {/* Clinical Publication Insights Section */}
               <div 
@@ -1212,19 +1214,41 @@ const TargetDetailView = ({
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <div className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/20"><FileText className="w-4 h-4 text-indigo-500" /></div>
-                    <h4 className="text-[11px] font-bold uppercase text-neutral-500 tracking-wider">Publication Insights</h4>
+                    <h4 className="text-[11px] font-bold uppercase text-neutral-500 tracking-wider">Literature</h4>
                   </div>
                   <div className="text-[9px] font-bold text-indigo-600 uppercase tracking-tighter">Click for Details</div>
                 </div>
                 <div className="space-y-3">
-                  <div className="flex justify-between items-end"><span className="text-[10px] font-bold text-neutral-400 uppercase">Total Signals</span><span className="text-xl font-black text-indigo-600">{target.drillDown.total_signals || 0}</span></div>
+                  <div className="flex justify-between items-end"><span className="text-[10px] font-bold text-neutral-400 uppercase">Literature Count</span><span className="text-xl font-black text-indigo-600">{target.drillDown.total_signals || 0}</span></div>
                   <div className="flex justify-between items-end"><span className="text-[10px] font-bold text-neutral-400 uppercase">Recent (24-25)</span><span className="text-lg font-bold text-indigo-500">{target.drillDown.recent_signals || 0}</span></div>
-                  <div className="flex justify-between items-end"><span className="text-[10px] font-bold text-neutral-400 uppercase">Signal Velocity</span><span className="text-[11px] font-mono font-bold text-indigo-600">{target.drillDown.signal_velocity || '0%'}</span></div>
+                  <div className="flex justify-between items-end"><span className="text-[10px] font-bold text-neutral-400 uppercase">Velocity (2y)</span><span className="text-[11px] font-mono font-bold text-indigo-600">{target.drillDown.signal_velocity || '0%'}</span></div>
                   <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800">
                     <span className="text-[9px] font-bold text-neutral-400 uppercase block mb-1">Latest Publication</span>
                     <p className="text-[10px] text-neutral-600 dark:text-neutral-400 line-clamp-1 italic">
                       {target.drillDown.top_papers?.[0]?.title || 'No recent publications found'}
                     </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Clinical Trials Section */}
+              <div 
+                onClick={() => onNavigateSubPage('clinical')}
+                className={`p-6 rounded-2xl border cursor-pointer transition-all hover:ring-2 hover:ring-emerald-500/50 hover:shadow-lg ${theme === 'dark' ? 'bg-[#171717] border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'}`}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20"><Activity className="w-4 h-4 text-emerald-500" /></div>
+                    <h4 className="text-[11px] font-bold uppercase text-neutral-500 tracking-wider">Clinical Trials</h4>
+                  </div>
+                  <div className="text-[9px] font-bold text-emerald-600 uppercase tracking-tighter">Click for Details</div>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-end"><span className="text-[10px] font-bold text-neutral-400 uppercase">Total Trials</span><span className="text-xl font-black text-emerald-600">{target.drillDown.trial_count || 0}</span></div>
+                  <div className="flex justify-between items-end"><span className="text-[10px] font-bold text-neutral-400 uppercase">Max Phase</span><span className="text-lg font-bold text-emerald-500">{target.drillDown.max_phase || 'N/A'}</span></div>
+                  <div className="flex justify-between items-end"><span className="text-[10px] font-bold text-neutral-400 uppercase">Interventional</span><span className="text-[11px] font-mono font-bold text-emerald-600">{target.drillDown.interventional_count || 0}</span></div>
+                  <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800 flex items-center gap-2">
+                    <span className="text-[9px] font-bold text-neutral-400 uppercase">Source: ClinicalTrials.gov</span>
                   </div>
                 </div>
               </div>
@@ -1240,12 +1264,36 @@ const TargetDetailView = ({
                 <div className="space-y-3">
                   <div className="flex justify-between items-end"><span className="text-[10px] font-bold text-neutral-400 uppercase">Paper Count</span><span className="text-xl font-black text-purple-600">{target.drillDown.paper_count.toLocaleString()}</span></div>
                   <div className="flex justify-between items-end"><span className="text-[10px] font-bold text-neutral-400 uppercase">Recent (3y)</span><span className="text-lg font-bold text-purple-500">{target.drillDown.recent_paper_count.toLocaleString()}</span></div>
-                  <div className="flex justify-between items-end"><span className="text-[10px] font-bold text-neutral-400 uppercase">Latest Pub</span><span className="text-[11px] font-mono font-bold text-neutral-600 dark:text-neutral-400">{target.drillDown.latest_publication_date}</span></div>
+                  <div className="flex justify-between items-end"><span className="text-[10px] font-bold text-neutral-400 uppercase">Latest Publication</span><span className="text-[11px] font-mono font-bold text-neutral-600 dark:text-neutral-400">{target.drillDown.latest_publication_date}</span></div>
                   <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800 flex items-center gap-2">
                     <span className="text-[9px] font-bold text-neutral-400 uppercase">Source: Europe PMC</span>
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* Clinical Intelligence Summary */}
+            {target.drillDown.clinical_summary && (
+              <div className={`mt-6 p-6 rounded-2xl border border-dashed ${theme === 'dark' ? 'bg-blue-900/5 border-blue-500/20' : 'bg-blue-50/50 border-blue-200'}`}>
+                <div className="flex items-center gap-2 mb-3">
+                  <ShieldCheck className="w-4 h-4 text-blue-500" />
+                  <h5 className="text-[10px] font-bold uppercase text-blue-600 tracking-widest">Clinical Intelligence Summary</h5>
+                </div>
+                <p className={`text-[12px] leading-relaxed italic ${theme === 'dark' ? 'text-neutral-300' : 'text-neutral-700'}`}>
+                  {target.drillDown.clinical_summary}
+                </p>
+              </div>
+            )}
+
+            {/* Clinical Pipeline Section */}
+            <div className="pt-10 border-t border-neutral-100 dark:border-neutral-800">
+              <DrugLandscape 
+                targetId={target.id} 
+                symbol={target.symbol} 
+                theme={theme} 
+                currentStatus={target.usefulness?.['clinical']}
+                onToggle={onToggleUsefulness}
+              />
             </div>
 
             {/* Target Summary (Moved to last) */}
@@ -1254,7 +1302,7 @@ const TargetDetailView = ({
               <p className={`text-sm leading-relaxed ${theme === 'dark' ? 'text-neutral-400' : 'text-neutral-600'}`}>
                 {target.name} ({target.symbol}) is a significant target in {diseaseName} research. 
                 With an overall evidence score of {target.overallScore.toFixed(4)}, it shows strong {target.geneticScore > 0.5 ? 'genetic' : 'molecular'} associations.
-                Explore the deep evidence intelligence above for detailed clinical and publication insights.
+                Explore the deep evidence intelligence above for detailed publication insights.
               </p>
             </div>
           </div>
@@ -1274,11 +1322,12 @@ const App = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('pharm_user'));
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [loading, setLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState("Mapping Intelligence...");
   const [researchState, setResearchState] = useState<ResearchContext>({ 
     activeDisease: null, 
     targets: [], 
     enrichment: [], 
-    limit: 30, 
+    limit: 20, 
     currentPage: 0, 
     focusSymbol: null,
     filters: [],
@@ -1290,14 +1339,13 @@ const App = () => {
   const [isChatting, setIsChatting] = useState(false);
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
-  const [activeScoreInfo, setActiveScoreInfo] = useState<'genetic' | 'expression' | 'target' | 'overall' | 'literature' | 'clinical' | 'novelty' | null>(null);
-  const [activeClinicalDetailGene, setActiveClinicalDetailGene] = useState<string | null>(null);
+  const [activeScoreInfo, setActiveScoreInfo] = useState<'genetic' | 'expression' | 'target' | 'overall' | 'literature' | 'get_score' | 'priority' | null>(null);
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
   const [drillDownLoading, setDrillDownLoading] = useState<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight; }, [messages]);
   const [isExporting, setIsExporting] = useState(false);
-  const [focusSubPage, setFocusSubPage] = useState<'main' | 'clinical' | 'literature'>('main');
+  const [focusSubPage, setFocusSubPage] = useState<'main' | 'literature' | 'clinical'>('main');
 
   const handleDrillDown = async (symbol: string) => {
     const target = researchState.targets.find(t => t.symbol === symbol);
@@ -1350,12 +1398,10 @@ const App = () => {
               // If we're trashing the overall gene row, mark all metrics as not-useful for this gene
               if (currentStatus === 'not-useful') {
                 delete newUsefulness['overall'];
-                delete newUsefulness['clinical'];
                 delete newUsefulness['literature'];
                 delete newUsefulness['discovery'];
               } else {
                 newUsefulness['overall'] = 'not-useful';
-                newUsefulness['clinical'] = 'not-useful';
                 newUsefulness['literature'] = 'not-useful';
                 newUsefulness['discovery'] = 'not-useful';
               }
@@ -1509,21 +1555,24 @@ const App = () => {
         'gene_name': 'name',
         'genetic_score': 'geneticScore',
         'literature_score': 'literatureScore',
-        'clinical_score': 'clinicalScore',
-        'novelty_score': 'noveltyScore',
+        'get_score': 'getScore',
         'expression_score': 'combinedExpression',
         'target_score': 'targetScore',
-        'overall_score': 'overallScore'
+        'overall_score': 'overallScore',
+        'priority_score': 'priorityScore'
       };
       const phaseMap: Record<string, number> = { 'N/A': 0, 'EARLY_PHASE1': 1, 'PHASE1': 2, 'PHASE2': 3, 'PHASE3': 4, 'PHASE4': 5 };
+
+      const drillDownFields = ['paper_count', 'recent_paper_count', 'latest_publication_date', 'total_signals', 'recent_signals', 'signal_velocity'];
 
       result = result.filter(t => {
         return researchState.filters.every(f => {
           let val: any;
           const internalField = fieldMapping[f.field] || f.field;
-          if (['trial_count', 'max_phase', 'active_trial_present', 'paper_count', 'recent_paper_count', 'latest_publication_date'].includes(f.field)) {
+          if (drillDownFields.includes(f.field)) {
             val = (t.drillDown as any)?.[f.field];
             if (f.field === 'max_phase') val = phaseMap[val || 'N/A'];
+            if (f.field === 'signal_velocity' && typeof val === 'string') val = parseFloat(val.replace('%', ''));
           } else {
             val = (t as any)[internalField];
           }
@@ -1568,24 +1617,26 @@ const App = () => {
         const fieldMapping: Record<string, string> = {
           'genetic_score': 'geneticScore',
           'literature_score': 'literatureScore',
-          'clinical_score': 'clinicalScore',
-          'novelty_score': 'noveltyScore',
+          'get_score': 'getScore',
           'expression_score': 'combinedExpression',
           'target_score': 'targetScore',
-          'overall_score': 'overallScore'
+          'overall_score': 'overallScore',
+          'priority_score': 'priorityScore'
         };
         const phaseMap: Record<string, number> = { 'N/A': 0, 'EARLY_PHASE1': 1, 'PHASE1': 2, 'PHASE2': 3, 'PHASE3': 4, 'PHASE4': 5 };
+
+        const drillDownFields = ['paper_count', 'recent_paper_count', 'latest_publication_date', 'total_signals', 'recent_signals', 'signal_velocity'];
 
         for (const s of researchState.sorts) {
           const internalField = fieldMapping[s.field] || s.field;
           let valA = (a as any)[internalField];
           let valB = (b as any)[internalField];
-          if (['trial_count', 'max_phase', 'paper_count'].includes(s.field)) {
+          if (drillDownFields.includes(s.field)) {
             valA = (a.drillDown as any)?.[s.field] || 0;
             valB = (b.drillDown as any)?.[s.field] || 0;
-            if (s.field === 'max_phase') {
-              valA = phaseMap[a.drillDown?.max_phase || 'N/A'];
-              valB = phaseMap[b.drillDown?.max_phase || 'N/A'];
+            if (s.field === 'signal_velocity') {
+              valA = typeof valA === 'string' ? parseFloat(valA.replace('%', '')) : (valA || 0);
+              valB = typeof valB === 'string' ? parseFloat(valB.replace('%', '')) : (valB || 0);
             }
           }
           if (valA !== valB) {
@@ -1814,6 +1865,31 @@ const App = () => {
     }
   }, [viewMode, activeCancerType, researchState.activeRace, researchState.activeGender, researchState.activeAgeGroup, researchState.survivalMetrics, researchState.lastAnalyzedRace, researchState.lastAnalyzedGender, researchState.lastAnalyzedAgeGroup, researchState.isAnalyzingSurvival, analyzeSurvival]);
 
+  const calculatePriorityScores = (targets: Target[]): Target[] => {
+    const interventionalCounts = targets.map(t => t.drillDown?.interventional_count || 0);
+    const maxInterventional = Math.max(...interventionalCounts, 1);
+
+    const velocities = targets.map(t => {
+      const vStr = t.drillDown?.signal_velocity || "0%";
+      return parseFloat(vStr.replace('%', '')) || 0;
+    });
+    const maxVelocity = Math.max(...velocities, 1);
+
+    return targets.map(t => {
+      const interventional = t.drillDown?.interventional_count || 0;
+      const interventional_normalized = interventional / maxInterventional;
+
+      const vStr = t.drillDown?.signal_velocity || "0%";
+      const velocity = parseFloat(vStr.replace('%', '')) || 0;
+      const velocity_normalized = velocity / maxVelocity;
+
+      const getScore = t.getScore || 0;
+      const priorityScore = (getScore * 0.70) + (interventional_normalized * 0.20) + (velocity_normalized * 0.10);
+
+      return { ...t, priorityScore };
+    });
+  };
+
   const handleToolExecution = useCallback(async (name: string, args: any) => {
     setLoading(true);
     try {
@@ -1822,11 +1898,11 @@ const App = () => {
         'gene_name': 'name',
         'genetic_score': 'geneticScore',
         'literature_score': 'literatureScore',
-        'clinical_score': 'clinicalScore',
-        'novelty_score': 'noveltyScore',
+        'get_score': 'getScore',
         'expression_score': 'combinedExpression',
         'target_score': 'targetScore',
-        'overall_score': 'overallScore'
+        'overall_score': 'overallScore',
+        'priority_score': 'priorityScore'
       };
       const phaseMap: Record<string, number> = { 'N/A': 0, 'EARLY_PHASE1': 1, 'PHASE1': 2, 'PHASE2': 3, 'PHASE3': 4, 'PHASE4': 5 };
 
@@ -1839,16 +1915,85 @@ const App = () => {
           const filteredOpts = opts.filter(o => (o.score || 0) / maxScore > 0.8).slice(0, 5);
           if (filteredOpts.length === 0 && opts.length > 0) filteredOpts.push(opts[0]);
           if (filteredOpts.length === 1) {
-            const opt = filteredOpts[0]; const genes = await api.getGenes(opt.id, 30, 0); const enr = await api.getEnrichment(genes.map(g => g.symbol));
-            setResearchState(prev => ({ ...prev, targets: genes, enrichment: enr, activeDisease: opt, focusSymbol: null, currentPage: 0, survivalMetrics: undefined, medianOs: undefined }));
-            return `Project set to ${opt.name}. Molecular evidence mapped.`;
+            const opt = filteredOpts[0];
+            setLoadingMessage("Fetching top gene associations...");
+            const genes = await api.getGenes(opt.id, 20, 0);
+            
+            const batchSize = 3;
+            const updatedGenes = [...genes];
+            for (let i = 0; i < updatedGenes.length; i += batchSize) {
+              const batch = updatedGenes.slice(i, i + batchSize);
+              const batchNum = Math.floor(i / batchSize) + 1;
+              const totalBatches = Math.ceil(updatedGenes.length / batchSize);
+              
+              const messages = [
+                "Analyzing clinical trial landscape...",
+                "Calculating publication momentum...",
+                "Building evidence profiles...",
+                "Finalizing target intelligence...",
+                "Synthesizing research data...",
+                "Cross-referencing clinical signals...",
+                "Evaluating therapeutic potential..."
+              ];
+              setLoadingMessage(`${messages[batchNum - 1] || "Processing evidence..."} (batch ${batchNum} of ${totalBatches})`);
+              
+              await Promise.all(batch.map(async (g, idx) => {
+                const dd = await api.getDrillDownData(g.symbol, opt.name);
+                updatedGenes[i + idx] = { ...g, drillDown: dd };
+              }));
+
+              if (i + batchSize < updatedGenes.length) {
+                await new Promise(resolve => setTimeout(resolve, 800));
+              }
+            }
+            
+            setLoadingMessage("Ranking targets by composite evidence...");
+            const finalGenes = calculatePriorityScores(updatedGenes);
+            const enr = await api.getEnrichment(finalGenes.map(g => g.symbol));
+            
+            setResearchState(prev => ({ ...prev, targets: finalGenes, enrichment: enr, activeDisease: opt, focusSymbol: null, currentPage: 0, survivalMetrics: undefined, medianOs: undefined }));
+            return `Project set to ${opt.name}. Molecular evidence mapped with composite scoring.`;
           }
           return { content: `I found several standard matches. Please refine your clinical focus:`, options: filteredOpts };
         }
         case 'get_genes': {
-          const genes = await api.getGenes(args.id, 30, 0); const enr = await api.getEnrichment(genes.map(g => g.symbol));
-          setResearchState(prev => ({ ...prev, targets: genes, enrichment: enr, activeDisease: { id: args.id, name: args.name }, focusSymbol: null, currentPage: 0, survivalMetrics: undefined, medianOs: undefined }));
-          return `Target prioritization complete for ${args.name}.`;
+          setLoadingMessage("Fetching top gene associations...");
+          const genes = await api.getGenes(args.id, 20, 0);
+          
+          const batchSize = 3;
+          const updatedGenes = [...genes];
+          for (let i = 0; i < updatedGenes.length; i += batchSize) {
+            const batch = updatedGenes.slice(i, i + batchSize);
+            const batchNum = Math.floor(i / batchSize) + 1;
+            const totalBatches = Math.ceil(updatedGenes.length / batchSize);
+            
+            const messages = [
+              "Analyzing clinical trial landscape...",
+              "Calculating publication momentum...",
+              "Building evidence profiles...",
+              "Finalizing target intelligence...",
+              "Synthesizing research data...",
+              "Cross-referencing clinical signals...",
+              "Evaluating therapeutic potential..."
+            ];
+            setLoadingMessage(`${messages[batchNum - 1] || "Processing evidence..."} (batch ${batchNum} of ${totalBatches})`);
+            
+            await Promise.all(batch.map(async (g, idx) => {
+              const dd = await api.getDrillDownData(g.symbol, args.name);
+              updatedGenes[i + idx] = { ...g, drillDown: dd };
+            }));
+
+            if (i + batchSize < updatedGenes.length) {
+              await new Promise(resolve => setTimeout(resolve, 800));
+            }
+          }
+          
+          setLoadingMessage("Ranking targets by composite evidence...");
+          const finalGenes = calculatePriorityScores(updatedGenes);
+          const enr = await api.getEnrichment(finalGenes.map(g => g.symbol));
+          
+          setResearchState(prev => ({ ...prev, targets: finalGenes, enrichment: enr, activeDisease: { id: args.id, name: args.name }, focusSymbol: null, currentPage: 0, survivalMetrics: undefined, medianOs: undefined }));
+          return `Target prioritization complete for ${args.name} with composite scoring.`;
         }
         case 'get_target_list': {
           if (displayTargets.length === 0) return "Target list is currently empty or no genes match the current filters.";
@@ -1856,10 +2001,10 @@ const App = () => {
             symbol: t.symbol,
             name: t.name,
             overall_score: t.overallScore.toFixed(3),
-            genetic_score: t.geneticScore.toFixed(3),
-            clinical_score: t.clinicalScore?.toFixed(3) || 'N/A'
+            get_score: t.getScore?.toFixed(3) || 'N/A',
+            genetic_score: t.geneticScore.toFixed(3)
           }));
-          return `Current target list (${list.length} genes shown):\n` + list.map(t => `- **${t.symbol}**: ${t.name} (Overall: ${t.overall_score})`).join('\n');
+          return `Current target list (${list.length} genes shown):\n` + list.map(t => `- **${t.symbol}**: ${t.name} (GET: ${t.get_score}, Overall: ${t.overall_score})`).join('\n');
         }
         case 'get_target_details': {
           const symbol = args.symbol;
@@ -1876,13 +2021,9 @@ const App = () => {
           return `### Detailed Evidence for ${symbol} (${target.name})\n` +
             `- **Overall Score**: ${target.overallScore.toFixed(4)}\n` +
             `- **Genetic Score**: ${target.geneticScore.toFixed(4)}\n` +
-            `- **Clinical Trials**: ${target.drillDown?.trial_count}\n` +
-            `- **Max Clinical Phase**: ${target.drillDown?.max_phase}\n` +
-            `- **Active Trials**: ${target.drillDown?.active_trial_present ? 'Yes' : 'No'}\n` +
             `- **Paper Count**: ${target.drillDown?.paper_count}\n` +
             `- **Recent Papers**: ${target.drillDown?.recent_paper_count}\n` +
-            `- **Latest Publication**: ${target.drillDown?.latest_publication_date}\n\n` +
-            (target.drillDown?.clinical_summary ? `**AI Clinical Insight**: ${target.drillDown.clinical_summary}` : '');
+            `- **Latest Publication**: ${target.drillDown?.latest_publication_date}\n\n`;
         }
         case 'get_active_filters': {
           const filters = researchState.filters.map(f => `${f.field} ${f.operator} ${f.boolValue !== undefined ? f.boolValue : (f.stringValue !== undefined ? f.stringValue : f.value)}`).join(', ');
@@ -1890,8 +2031,9 @@ const App = () => {
           return `Active Filters: ${filters || 'None'}\nActive Sorts: ${sorts || 'None'}\nTotal matching genes: ${displayTargets.length}`;
         }
         case 'apply_filters': {
+          const drillDownFields = ['paper_count', 'recent_paper_count', 'latest_publication_date', 'total_signals', 'recent_signals', 'signal_velocity'];
           const needsDrillDown = args.conditions.some((c: any) => 
-            ['trial_count', 'max_phase', 'active_trial_present', 'paper_count', 'recent_paper_count', 'latest_publication_date'].includes(c.field)
+            drillDownFields.includes(c.field)
           );
           if (needsDrillDown) {
             const targetsToFetch = researchState.targets.filter(t => !t.drillDown);
@@ -1931,12 +2073,14 @@ const App = () => {
         case 'preview_filter_effect': {
           // Simulate filtering
           const phaseMap: Record<string, number> = { 'N/A': 0, 'EARLY_PHASE1': 1, 'PHASE1': 2, 'PHASE2': 3, 'PHASE3': 4, 'PHASE4': 5 };
+          const drillDownFields = ['paper_count', 'recent_paper_count', 'latest_publication_date', 'total_signals', 'recent_signals', 'signal_velocity'];
           const tempFiltered = displayTargets.filter(t => {
             let val: any;
             const internalField = fieldMapping[args.condition.field] || args.condition.field;
-            if (['trial_count', 'max_phase', 'active_trial_present', 'paper_count', 'recent_paper_count', 'latest_publication_date'].includes(args.condition.field)) {
+            if (drillDownFields.includes(args.condition.field)) {
               val = (t.drillDown as any)?.[args.condition.field];
               if (args.condition.field === 'max_phase') val = phaseMap[val || 'N/A'];
+              if (args.condition.field === 'signal_velocity' && typeof val === 'string') val = parseFloat(val.replace('%', ''));
             } else {
               val = (t as any)[internalField];
             }
@@ -1951,8 +2095,9 @@ const App = () => {
         }
         case 'filter_targets': {
           // Legacy support: now updates state
+          const drillDownFields = ['paper_count', 'recent_paper_count', 'latest_publication_date', 'total_signals', 'recent_signals', 'signal_velocity'];
           const needsDrillDown = args.conditions.some((c: any) => 
-            ['trial_count', 'max_phase', 'active_trial_present', 'paper_count', 'recent_paper_count', 'latest_publication_date'].includes(c.field)
+            drillDownFields.includes(c.field)
           );
           if (needsDrillDown) {
             const targetsToFetch = researchState.targets.filter(t => !t.drillDown);
@@ -1979,19 +2124,33 @@ const App = () => {
           const targets = researchState.targets.filter(t => args.symbols.includes(t.symbol));
           if (targets.length === 0) return "None of the specified genes were found in the current list.";
           let table = `| Metric | ${targets.map(t => t.symbol).join(' | ')} |\n| --- | ${targets.map(() => '---').join(' | ')} |\n`;
-          const metrics = ['overall_score', 'genetic_score', 'clinical_score', 'literature_score', 'novelty_score', 'expression_score', 'target_score'];
-          metrics.forEach(m => {
+          const scoreMetrics = ['overall_score', 'get_score', 'genetic_score', 'literature_score', 'expression_score', 'target_score'];
+          scoreMetrics.forEach(m => {
             const internalField = fieldMapping[m] || m;
-            table += `| ${m.replace('_', ' ')} | ${targets.map(t => (t as any)[internalField]?.toFixed(3) || 'N/A').join(' | ')} |\n`;
+            table += `| ${m.replace(/_/g, ' ')} | ${targets.map(t => (t as any)[internalField]?.toFixed(3) || 'N/A').join(' | ')} |\n`;
           });
+          
+          const evidenceMetrics = [
+            { label: 'Literature Count', field: 'total_signals' },
+            { label: 'Recent Signals', field: 'recent_signals' },
+            { label: 'Velocity (2y)', field: 'signal_velocity' }
+          ];
+          
+          evidenceMetrics.forEach(m => {
+            table += `| ${m.label} | ${targets.map(t => {
+              const val = (t.drillDown as any)?.[m.field];
+              if (val === undefined) return 'N/A';
+              if (typeof val === 'boolean') return val ? 'Yes' : 'No';
+              return val;
+            }).join(' | ')} |\n`;
+          });
+          
           return `### Target Comparison\n\n${table}`;
         }
         case 'summarize_targets': {
           let set = displayTargets;
           if (args.target_set === 'filtered') {
              set = displayTargets;
-          } else if (args.target_set === 'top_clinical') {
-            set = [...set].sort((a, b) => (b.clinicalScore || 0) - (a.clinicalScore || 0)).slice(0, 5);
           } else if (args.target_set === 'top_literature') {
             set = [...set].sort((a, b) => (b.literatureScore || 0) - (a.literatureScore || 0)).slice(0, 5);
           } else if (args.target_set === 'high_overall_low_target') {
@@ -1999,19 +2158,27 @@ const App = () => {
           }
           
           return `### Summary: ${args.target_set.replace(/_/g, ' ')}\n` + 
-            set.map(t => `- **${t.symbol}**: ${t.name}\n  - Overall: ${t.overallScore.toFixed(3)}\n  - Clinical: ${t.clinicalScore?.toFixed(3) || 'N/A'}\n  - Literature: ${t.literatureScore?.toFixed(3) || 'N/A'}`).join('\n');
+            set.map(t => {
+              let info = `- **${t.symbol}**: ${t.name}\n  - GET Score: ${t.getScore?.toFixed(3) || 'N/A'}\n  - Overall: ${t.overallScore.toFixed(3)}\n  - Literature: ${t.literatureScore?.toFixed(3) || 'N/A'}`;
+              if (t.drillDown) {
+                info += `\n  - Literature Count: ${t.drillDown.total_signals} (Velocity: ${t.drillDown.signal_velocity})`;
+              }
+              return info;
+            }).join('\n');
         }
         case 'explain_target': {
           const t = researchState.targets.find(t => t.symbol === args.symbol);
           if (!t) return `Target ${args.symbol} not found.`;
           return `### Why is ${t.symbol} ranked this way?\n` +
+            `- **Priority Score (${t.priorityScore?.toFixed(3) || 'N/A'})**: Weighted prioritization (70% GET, 20% Interventional, 10% Velocity).\n` +
+            `- **GET Score (${t.getScore?.toFixed(3) || 'N/A'})**: Weighted prioritization (50% Genetic, 25% Expression, 25% Target).\n` +
             `- **Overall Score (${t.overallScore.toFixed(3)})**: Weighted combination of all evidence.\n` +
             `- **Genetic Evidence (${t.geneticScore.toFixed(3)})**: Strength of association from GWAS/V2G data.\n` +
-            `- **Clinical Evidence (${t.clinicalScore?.toFixed(3) || 'N/A'})**: Progress in clinical trials.\n` +
             `- **Literature Support (${t.literatureScore?.toFixed(3) || 'N/A'})**: Volume of research papers.\n` +
             `- **Targetability (${t.targetScore.toFixed(3)})**: Assessment of how "druggable" the protein is.`;
         }
         case 'rank_targets': {
+          const drillDownFields = ['paper_count', 'recent_paper_count', 'latest_publication_date', 'total_signals', 'recent_signals', 'signal_velocity'];
           const ranked = [...researchState.targets].sort((a, b) => {
             let scoreA = 0, scoreB = 0;
             args.priorities.forEach((p: any) => {
@@ -2019,12 +2186,12 @@ const App = () => {
               const weight = p.weight || 1;
               let valA = (a as any)[internalField] || 0;
               let valB = (b as any)[internalField] || 0;
-              if (['trial_count', 'max_phase', 'paper_count'].includes(p.field)) {
+              if (drillDownFields.includes(p.field)) {
                 valA = (a.drillDown as any)?.[p.field] || 0;
                 valB = (b.drillDown as any)?.[p.field] || 0;
-                if (p.field === 'max_phase') {
-                  valA = phaseMap[a.drillDown?.max_phase || 'N/A'];
-                  valB = phaseMap[b.drillDown?.max_phase || 'N/A'];
+                if (p.field === 'signal_velocity') {
+                  valA = typeof valA === 'string' ? parseFloat(valA.replace('%', '')) : (valA || 0);
+                  valB = typeof valB === 'string' ? parseFloat(valB.replace('%', '')) : (valB || 0);
                 }
               }
               scoreA += valA * weight;
@@ -2037,9 +2204,8 @@ const App = () => {
         }
         case 'suggest_filters': {
           return { content: `Based on your query "${args.query}", here are some suggested filters:`, filterOptions: [
-            { label: 'High Clinical Evidence', scoreType: 'clinicalScore', threshold: 0.5, operator: 'gt' as const },
-            { label: 'Strong Genetic Support', scoreType: 'geneticScore', threshold: 0.7, operator: 'gt' as const },
-            { label: 'Novel Targets', scoreType: 'noveltyScore', threshold: 0.8, operator: 'gt' as const }
+            { label: 'High GET Score', scoreType: 'getScore', threshold: 0.6, operator: 'gt' as const },
+            { label: 'Strong Genetic Support', scoreType: 'geneticScore', threshold: 0.7, operator: 'gt' as const }
           ]};
         }
         case 'update_view': { 
@@ -2050,12 +2216,41 @@ const App = () => {
         case 'load_more': {
           if (!researchState.activeDisease) return "No active condition to load more data for.";
           const nextPage = researchState.currentPage + 1;
-          const genes = await api.getGenes(researchState.activeDisease.id, 30, nextPage);
-          if (genes.length === 0) return "No more additional evidence found for this condition.";
-          const combinedTargets = [...researchState.targets, ...genes];
-          const enr = await api.getEnrichment(combinedTargets.map(g => g.symbol));
-          setResearchState(prev => ({ ...prev, targets: combinedTargets, enrichment: enr, currentPage: nextPage }));
-          return `Loaded ${genes.length} additional prioritized targets. Current total: ${combinedTargets.length}.`;
+          setLoadingMessage(`Fetching next ${researchState.limit} gene associations...`);
+          const newGenes = await api.getGenes(researchState.activeDisease.id, researchState.limit, nextPage * researchState.limit);
+          if (newGenes.length === 0) return "No more additional evidence found for this condition.";
+          
+          const batchSize = 3;
+          const updatedNewGenes = [...newGenes];
+          for (let i = 0; i < updatedNewGenes.length; i += batchSize) {
+            const batch = updatedNewGenes.slice(i, i + batchSize);
+            const batchNum = Math.floor(i / batchSize) + 1;
+            const totalBatches = Math.ceil(updatedNewGenes.length / batchSize);
+            
+            setLoadingMessage(`Analyzing clinical evidence for new targets... (batch ${batchNum} of ${totalBatches})`);
+            
+            await Promise.all(batch.map(async (g, idx) => {
+              const dd = await api.getDrillDownData(g.symbol, researchState.activeDisease!.name);
+              updatedNewGenes[i + idx] = { ...g, drillDown: dd };
+            }));
+
+            if (i + batchSize < updatedNewGenes.length) {
+              await new Promise(resolve => setTimeout(resolve, 800));
+            }
+          }
+          
+          setLoadingMessage("Recalculating composite scores for all targets...");
+          const allTargets = [...researchState.targets, ...updatedNewGenes];
+          const finalTargets = calculatePriorityScores(allTargets);
+          
+          const enr = await api.getEnrichment(finalTargets.map(g => g.symbol));
+          setResearchState(prev => ({
+            ...prev,
+            targets: finalTargets,
+            enrichment: enr,
+            currentPage: nextPage
+          }));
+          return `Loaded ${updatedNewGenes.length} more targets for ${researchState.activeDisease.name}.`;
         }
         default: return "Acknowledged.";
       }
@@ -2085,11 +2280,11 @@ const App = () => {
         { name: 'filter_targets', parameters: { type: Type.OBJECT, properties: { conditions: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { field: { type: Type.STRING }, operator: { type: Type.STRING, enum: ['>', '<', '>=', '<=', '=', '!=', 'between'] }, value: { type: Type.NUMBER }, value2: { type: Type.NUMBER }, boolValue: { type: Type.BOOLEAN }, stringValue: { type: Type.STRING } }, required: ['field', 'operator'] } }, logic: { type: Type.STRING, enum: ['AND', 'OR'] } }, required: ['conditions'] } },
         { name: 'sort_targets', parameters: { type: Type.OBJECT, properties: { sorts: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { field: { type: Type.STRING }, direction: { type: Type.STRING, enum: ['asc', 'desc'] } }, required: ['field', 'direction'] } } }, required: ['sorts'] } },
         { name: 'compare_targets', parameters: { type: Type.OBJECT, properties: { symbols: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ['symbols'] } },
-        { name: 'summarize_targets', parameters: { type: Type.OBJECT, properties: { target_set: { type: Type.STRING, enum: ['current', 'filtered', 'top_clinical', 'top_literature', 'high_overall_low_target'] } }, required: ['target_set'] } },
+        { name: 'summarize_targets', parameters: { type: Type.OBJECT, properties: { target_set: { type: Type.STRING, enum: ['current', 'filtered', 'top_literature', 'high_overall_low_target'] } }, required: ['target_set'] } },
         { name: 'explain_target', parameters: { type: Type.OBJECT, properties: { symbol: { type: Type.STRING } }, required: ['symbol'] } },
         { name: 'get_target_details', parameters: { type: Type.OBJECT, properties: { symbol: { type: Type.STRING } }, required: ['symbol'] } },
         { name: 'suggest_filters', parameters: { type: Type.OBJECT, properties: { query: { type: Type.STRING } }, required: ['query'] } },
-        { name: 'rank_targets', parameters: { type: Type.OBJECT, properties: { priorities: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { field: { type: Type.STRING }, weight: { type: Type.NUMBER } }, required: ['field'] } }, require_active_trials: { type: Type.BOOLEAN } }, required: ['priorities'] } }
+        { name: 'rank_targets', parameters: { type: Type.OBJECT, properties: { priorities: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { field: { type: Type.STRING }, weight: { type: Type.NUMBER } }, required: ['field'] } } }, required: ['priorities'] } }
       ];
 
       const systemInstruction = `You are the DiseaseToTarget AI Assistant, an intelligent terminal for Target List exploration.
@@ -2111,17 +2306,13 @@ const App = () => {
       
       Fields Available:
       - Gene Info: gene (symbol), gene_name (name).
-      - Scores (0.0 - 1.0): overall_score, genetic_score, literature_score, clinical_score, novelty_score, expression_score, target_score.
-      - Evidence Metrics: trial_count (number), max_phase (ordinal), active_trial_present (boolean), paper_count (number), recent_paper_count (number), latest_publication_date (string/date).
+      - Scores (0.0 - 1.0): overall_score, get_score (50% Genetic, 25% Exp, 25% Target), genetic_score, literature_score, expression_score, target_score.
+      - Evidence Metrics: 
+        - Literature: paper_count (Europe PMC count), recent_paper_count (Europe PMC 3y), total_signals (Literature Count), recent_signals (Recent signals), signal_velocity (Velocity percentage), latest_publication_date (string/date).
       
       Interpretation Rules:
       - Comparison: "greater than", "above", "more than" (>= or >); "less than", "below" (<= or <); "equal to" (=); "not equal to" (!=).
-      - Boolean: "active only" (active_trial_present = true), "no active trials" (active_trial_present = false).
-      - Phase Ordering: EARLY_PHASE1 (1), PHASE1 (2), PHASE2 (3), PHASE3 (4), PHASE4 (5).
-        - "Phase 3 and above" -> max_phase >= 4.
-        - "Late-stage" -> PHASE3 (4) or PHASE4 (5).
       - Literature: "recent papers" -> recent_paper_count; "Europe PMC papers" -> paper_count; "literature papers" -> paper_count.
-      - Clinical: "clinical trials" -> trial_count; "trial count" -> trial_count; "max phase" -> max_phase.
       - Top/Bottom: Use 'sort_targets' followed by 'get_target_list' with a limit.
       - AND/OR: Use the 'logic' parameter in 'apply_filters' or 'filter_targets'.
       - Date: For "after 2023", use field 'latest_publication_date', operator '>', value 2023.
@@ -2279,7 +2470,7 @@ const App = () => {
              </div>
            )}
            <div className={`flex-1 rounded-2xl border overflow-hidden relative ${theme === 'dark' ? 'bg-[#121212] border-neutral-800' : 'bg-white shadow-lg'}`}>
-              {(loading || researchState.isAnalyzingSurvival) && (<div className="absolute inset-0 bg-neutral-900/40 backdrop-blur-[2px] z-50 flex flex-col items-center justify-center gap-4"><Loader2 className="w-8 h-8 animate-spin text-blue-500" /><p className="text-[11px] font-bold uppercase text-white tracking-widest">Mapping Intelligence...</p></div>)}
+              {(loading || researchState.isAnalyzingSurvival) && (<div className="absolute inset-0 bg-neutral-900/40 backdrop-blur-[2px] z-50 flex flex-col items-center justify-center gap-4"><Loader2 className="w-8 h-8 animate-spin text-blue-500" /><p className="text-[11px] font-bold uppercase text-white tracking-widest">{loadingMessage}</p></div>)}
               
               {researchState.focusSymbol ? (
                 <TargetDetailView 
@@ -2372,7 +2563,6 @@ const App = () => {
                         <table className="w-full text-left border-collapse">
                           <thead className={`sticky top-0 z-10 text-[10px] font-bold uppercase tracking-widest border-b ${theme === 'dark' ? 'bg-[#171717] border-neutral-800 text-neutral-500' : 'bg-neutral-50 border-neutral-200 text-neutral-900 shadow-sm'}`}>
                             <tr>
-                              <th className="p-4 w-10"></th>
                               <th className="p-4 pl-4">Gene</th>
                               <th className="p-4 hidden md:table-cell">Gene Name</th>
                               <th className="p-4 text-center relative">
@@ -2393,77 +2583,8 @@ const App = () => {
                                       <div className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/20"><Info className="w-3.5 h-3.5 text-blue-500" /></div>
                                       <h5 className="text-[12px] font-bold text-black dark:text-white">Genetic Score</h5>
                                     </div>
-                                    <p className="text-[11px] text-black dark:text-neutral-400 leading-relaxed mb-3">Aggregated genetic evidence linking the gene to the selected disease. Range: 0–1. Higher indicates stronger genetic support.</p>
+                                    <p className="text-[11px] text-black dark:text-neutral-400 leading-relaxed mb-3">Max of genetic_association, somatic_mutation, and genetic_literature datatype scores from Open Targets. Reflects strength of evidence linking this gene to the disease through germline variants, somatic mutations, and genetics-informed literature.</p>
                                     <button onClick={() => setActiveScoreInfo('genetic')} className="text-[10px] font-bold text-blue-600 hover:underline flex items-center gap-1">Learn more <ChevronRight className="w-3 h-3" /></button>
-                                  </div>
-                                )}
-                              </th>
-                              <th className="p-4 text-center relative">
-                                <div className="flex items-center justify-center gap-1.5">
-                                  Literature
-                                  <button 
-                                    onMouseEnter={() => setActiveTooltip('literature')} 
-                                    onMouseLeave={() => setActiveTooltip(null)}
-                                    onClick={() => setActiveScoreInfo('literature')}
-                                    className="p-0.5 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-colors"
-                                  >
-                                    <Info className="w-3 h-3 text-neutral-400" />
-                                  </button>
-                                </div>
-                                {activeTooltip === 'literature' && (
-                                  <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 p-4 rounded-xl border bg-white dark:bg-[#1c1c1c] border-neutral-200 dark:border-neutral-800 shadow-2xl z-50 text-left normal-case tracking-normal animate-in fade-in slide-in-from-top-2 duration-200">
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <div className="p-1.5 rounded-lg bg-purple-50 dark:bg-purple-900/20"><BookOpen className="w-3.5 h-3.5 text-purple-500" /></div>
-                                      <h5 className="text-[12px] font-bold text-black dark:text-white">Literature Support</h5>
-                                    </div>
-                                    <p className="text-[11px] text-black dark:text-neutral-400 leading-relaxed mb-3">Evidence from Europe PMC and other literature sources. Range: 0–1. Higher indicates stronger literature support.</p>
-                                    <button onClick={() => setActiveScoreInfo('literature')} className="text-[10px] font-bold text-purple-600 hover:underline flex items-center gap-1">Learn more <ChevronRight className="w-3 h-3" /></button>
-                                  </div>
-                                )}
-                              </th>
-                              <th className="p-4 text-center relative">
-                                <div className="flex items-center justify-center gap-1.5">
-                                  Clinical
-                                  <button 
-                                    onMouseEnter={() => setActiveTooltip('clinical')} 
-                                    onMouseLeave={() => setActiveTooltip(null)}
-                                    onClick={() => setActiveScoreInfo('clinical')}
-                                    className="p-0.5 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-colors"
-                                  >
-                                    <Info className="w-3 h-3 text-neutral-400" />
-                                  </button>
-                                </div>
-                                {activeTooltip === 'clinical' && (
-                                  <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 p-4 rounded-xl border bg-white dark:bg-[#1c1c1c] border-neutral-200 dark:border-neutral-800 shadow-2xl z-50 text-left normal-case tracking-normal animate-in fade-in slide-in-from-top-2 duration-200">
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <div className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-900/20"><Stethoscope className="w-3.5 h-3.5 text-rose-500" /></div>
-                                      <h5 className="text-[12px] font-bold text-black dark:text-white">Clinical Evidence</h5>
-                                    </div>
-                                    <p className="text-[11px] text-black dark:text-neutral-400 leading-relaxed mb-3">Evidence from clinical trials and known drugs. Range: 0–1. Higher indicates more advanced clinical validation.</p>
-                                    <button onClick={() => setActiveScoreInfo('clinical')} className="text-[10px] font-bold text-rose-600 hover:underline flex items-center gap-1">Learn more <ChevronRight className="w-3 h-3" /></button>
-                                  </div>
-                                )}
-                              </th>
-                              <th className="p-4 text-center relative">
-                                <div className="flex items-center justify-center gap-1.5">
-                                  Novelty
-                                  <button 
-                                    onMouseEnter={() => setActiveTooltip('novelty')} 
-                                    onMouseLeave={() => setActiveTooltip(null)}
-                                    onClick={() => setActiveScoreInfo('novelty')}
-                                    className="p-0.5 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-colors"
-                                  >
-                                    <Info className="w-3 h-3 text-neutral-400" />
-                                  </button>
-                                </div>
-                                {activeTooltip === 'novelty' && (
-                                  <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 p-4 rounded-xl border bg-white dark:bg-[#1c1c1c] border-neutral-200 dark:border-neutral-800 shadow-2xl z-50 text-left normal-case tracking-normal animate-in fade-in slide-in-from-top-2 duration-200">
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <div className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/20"><Atom className="w-3.5 h-3.5 text-indigo-500" /></div>
-                                      <h5 className="text-[12px] font-bold text-black dark:text-white">Novelty Score</h5>
-                                    </div>
-                                    <p className="text-[11px] text-black dark:text-neutral-400 leading-relaxed mb-3">Inverse of literature support. Range: 0–1. Higher indicates a more novel/less-studied target.</p>
-                                    <button onClick={() => setActiveScoreInfo('novelty')} className="text-[10px] font-bold text-indigo-600 hover:underline flex items-center gap-1">Learn more <ChevronRight className="w-3 h-3" /></button>
                                   </div>
                                 )}
                               </th>
@@ -2485,7 +2606,7 @@ const App = () => {
                                       <div className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20"><Info className="w-3.5 h-3.5 text-emerald-500" /></div>
                                       <h5 className="text-[12px] font-bold text-black dark:text-white">Expression Score</h5>
                                     </div>
-                                    <p className="text-[11px] text-black dark:text-neutral-400 leading-relaxed mb-3">Aggregated RNA expression evidence supporting gene–disease association. Range: 0–1.</p>
+                                    <p className="text-[11px] text-black dark:text-neutral-400 leading-relaxed mb-3">Calculated from Open Targets RNA expression data across all tissues. Combines expression strength (top 3 tissue average, log-normalized) and tissue selectivity (peak tissue vs mean). Higher score means strongly and selectively expressed.</p>
                                     <button onClick={() => setActiveScoreInfo('expression')} className="text-[10px] font-bold text-emerald-600 hover:underline flex items-center gap-1">Learn more <ChevronRight className="w-3 h-3" /></button>
                                   </div>
                                 )}
@@ -2506,10 +2627,79 @@ const App = () => {
                                   <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 p-4 rounded-xl border bg-white dark:bg-[#1c1c1c] border-neutral-200 dark:border-neutral-800 shadow-2xl z-50 text-left normal-case tracking-normal animate-in fade-in slide-in-from-top-2 duration-200">
                                     <div className="flex items-center gap-2 mb-2">
                                       <div className="p-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/20"><Pill className="w-3.5 h-3.5 text-amber-500" /></div>
-                                      <h5 className="text-[12px] font-bold text-black dark:text-white">Drug / Target Score</h5>
+                                      <h5 className="text-[12px] font-bold text-black dark:text-white">Target Score</h5>
                                     </div>
-                                    <p className="text-[11px] text-black dark:text-neutral-400 leading-relaxed mb-3">Evidence from known drug–target relationships. Range: 0–1.</p>
+                                    <p className="text-[11px] text-black dark:text-neutral-400 leading-relaxed mb-3">Derived from Open Targets tractability assessment. Reflects how druggable this gene is: Approved Drug (1.0), Advanced Clinical (0.85), Phase 1 Clinical (0.70), Structure with Ligand (0.55), High-Quality Pocket (0.40), Druggable Family (0.25), Unknown (0.10).</p>
                                     <button onClick={() => setActiveScoreInfo('target')} className="text-[10px] font-bold text-amber-600 hover:underline flex items-center gap-1">Learn more <ChevronRight className="w-3 h-3" /></button>
+                                  </div>
+                                )}
+                              </th>
+                              <th className="p-4 text-center relative">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  Literature
+                                  <button 
+                                    onMouseEnter={() => setActiveTooltip('literature')} 
+                                    onMouseLeave={() => setActiveTooltip(null)}
+                                    onClick={() => setActiveScoreInfo('literature')}
+                                    className="p-0.5 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-colors"
+                                  >
+                                    <Info className="w-3 h-3 text-neutral-400" />
+                                  </button>
+                                </div>
+                                {activeTooltip === 'literature' && (
+                                  <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 p-4 rounded-xl border bg-white dark:bg-[#1c1c1c] border-neutral-200 dark:border-neutral-800 shadow-2xl z-50 text-left normal-case tracking-normal animate-in fade-in slide-in-from-top-2 duration-200">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <div className="p-1.5 rounded-lg bg-purple-50 dark:bg-purple-900/20"><BookOpen className="w-3.5 h-3.5 text-purple-500" /></div>
+                                      <h5 className="text-[12px] font-bold text-black dark:text-white">Literature Support</h5>
+                                    </div>
+                                    <p className="text-[11px] text-black dark:text-neutral-400 leading-relaxed mb-3">Literature datatype score from Open Targets. Reflects the volume and quality of published evidence associating this gene with the disease, sourced from Europe PMC text mining.</p>
+                                    <button onClick={() => setActiveScoreInfo('literature')} className="text-[10px] font-bold text-purple-600 hover:underline flex items-center gap-1">Learn more <ChevronRight className="w-3 h-3" /></button>
+                                  </div>
+                                )}
+                              </th>
+                              <th className="p-4 text-center relative">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  GET Score
+                                  <button 
+                                    onMouseEnter={() => setActiveTooltip('get_score')} 
+                                    onMouseLeave={() => setActiveTooltip(null)}
+                                    onClick={() => setActiveScoreInfo('get_score')}
+                                    className="p-0.5 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-colors"
+                                  >
+                                    <Info className="w-3 h-3 text-neutral-400" />
+                                  </button>
+                                </div>
+                                {activeTooltip === 'get_score' && (
+                                  <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 p-4 rounded-xl border bg-white dark:bg-[#1c1c1c] border-neutral-200 dark:border-neutral-800 shadow-2xl z-50 text-left normal-case tracking-normal animate-in fade-in slide-in-from-top-2 duration-200">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <div className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/20"><Atom className="w-3.5 h-3.5 text-indigo-500" /></div>
+                                      <h5 className="text-[12px] font-bold text-black dark:text-white">GET Score</h5>
+                                    </div>
+                                    <p className="text-[11px] text-black dark:text-neutral-400 leading-relaxed mb-3">Composite score combining Genetic (50%), Expression (25%), and Target tractability (25%). Represents the overall biological priority of this gene as a drug target independent of Open Targets overall score.</p>
+                                    <button onClick={() => setActiveScoreInfo('get_score')} className="text-[10px] font-bold text-indigo-600 hover:underline flex items-center gap-1">Learn more <ChevronRight className="w-3 h-3" /></button>
+                                  </div>
+                                )}
+                              </th>
+                              <th className="p-4 text-center relative">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  Priority
+                                  <button 
+                                    onMouseEnter={() => setActiveTooltip('priority')} 
+                                    onMouseLeave={() => setActiveTooltip(null)}
+                                    onClick={() => setActiveScoreInfo('priority')}
+                                    className="p-0.5 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-colors"
+                                  >
+                                    <Info className="w-3 h-3 text-neutral-400" />
+                                  </button>
+                                </div>
+                                {activeTooltip === 'priority' && (
+                                  <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 p-4 rounded-xl border bg-white dark:bg-[#1c1c1c] border-neutral-200 dark:border-neutral-800 shadow-2xl z-50 text-left normal-case tracking-normal animate-in fade-in slide-in-from-top-2 duration-200">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <div className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-900/20"><Activity className="w-3.5 h-3.5 text-rose-500" /></div>
+                                      <h5 className="text-[12px] font-bold text-black dark:text-white">Priority Score</h5>
+                                    </div>
+                                    <p className="text-[11px] text-black dark:text-neutral-400 leading-relaxed mb-3">Advanced prioritization combining GET Score (70%), normalized Clinical Trial count (20%), and normalized Literature Velocity (10%). Provides a balanced view of biological potential and clinical momentum.</p>
+                                    <button onClick={() => setActiveScoreInfo('priority')} className="text-[10px] font-bold text-rose-600 hover:underline flex items-center gap-1">Learn more <ChevronRight className="w-3 h-3" /></button>
                                   </div>
                                 )}
                               </th>
@@ -2531,7 +2721,7 @@ const App = () => {
                                       <div className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/20"><Atom className="w-3.5 h-3.5 text-blue-500" /></div>
                                       <h5 className="text-[12px] font-bold text-black dark:text-white">Overall Score</h5>
                                     </div>
-                                    <p className="text-[11px] text-black dark:text-neutral-400 leading-relaxed mb-3">Harmonized prioritization score integrating genetic, expression, and targetability metrics.</p>
+                                    <p className="text-[11px] text-black dark:text-neutral-400 leading-relaxed mb-3">Open Targets platform overall association score combining all their evidence datatypes.</p>
                                     <button onClick={() => setActiveScoreInfo('overall')} className="text-[10px] font-bold text-blue-600 hover:underline flex items-center gap-1">Learn more <ChevronRight className="w-3 h-3" /></button>
                                   </div>
                                 )}
@@ -2541,8 +2731,7 @@ const App = () => {
                           <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
                             {displayTargets.map(t => {
                               const isRowPinned = t.usefulness?.['overall'] === 'pinned';
-                              const areAllMetricsHidden = t.usefulness?.['clinical'] === 'not-useful' && 
-                                                         t.usefulness?.['literature'] === 'not-useful' && 
+                              const areAllMetricsHidden = t.usefulness?.['literature'] === 'not-useful' && 
                                                          t.usefulness?.['discovery'] === 'not-useful';
 
                               return (
@@ -2554,14 +2743,23 @@ const App = () => {
                                     }} 
                                     className={`cursor-pointer transition-all hover:bg-blue-50/30 dark:hover:bg-neutral-800/20 ${researchState.focusSymbol === t.symbol ? 'bg-blue-100/30 dark:bg-blue-900/10' : ''} ${isRowPinned ? 'ring-2 ring-inset ring-blue-500/50 bg-blue-50/10 dark:bg-blue-900/5' : ''}`}
                                   >
-                                  <td className="p-4 pl-4 font-bold text-blue-700 dark:text-blue-500 text-[13px]">{t.symbol}</td>
+                                  <td className="p-4 pl-4 font-bold text-blue-700 dark:text-blue-500 text-[13px]">
+                                    <div className="flex items-center gap-2 group">
+                                      {t.symbol}
+                                      {drillDownLoading === t.symbol ? (
+                                        <Loader2 className="w-3 h-3 animate-spin text-blue-500" />
+                                      ) : (
+                                        <ZoomIn className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity text-blue-400" />
+                                      )}
+                                    </div>
+                                  </td>
                                   <td className={`p-4 text-[12px] hidden md:table-cell ${theme === 'dark' ? 'text-neutral-400' : 'text-neutral-900'}`}>{t.name}</td>
                                   <td className={`p-4 text-center font-mono text-[11px] font-medium ${theme === 'dark' ? 'text-neutral-400' : 'text-neutral-700'}`}>{t.geneticScore.toFixed(3)}</td>
-                                  <td className={`p-4 text-center font-mono text-[11px] font-medium ${theme === 'dark' ? 'text-neutral-400' : 'text-neutral-700'}`}>{t.literatureScore?.toFixed(3)}</td>
-                                  <td className={`p-4 text-center font-mono text-[11px] font-medium ${theme === 'dark' ? 'text-neutral-400' : 'text-neutral-700'}`}>{t.clinicalScore?.toFixed(3)}</td>
-                                  <td className={`p-4 text-center font-mono text-[11px] font-medium ${theme === 'dark' ? 'text-neutral-400' : 'text-neutral-700'}`}>{t.noveltyScore?.toFixed(3)}</td>
                                   <td className={`p-4 text-center font-mono text-[11px] font-medium ${theme === 'dark' ? 'text-neutral-400' : 'text-neutral-700'}`}>{t.combinedExpression?.toFixed(3)}</td>
                                   <td className={`p-4 text-center font-mono text-[11px] font-medium ${theme === 'dark' ? 'text-neutral-400' : 'text-neutral-700'}`}>{t.targetScore.toFixed(3)}</td>
+                                  <td className={`p-4 text-center font-mono text-[11px] font-medium ${theme === 'dark' ? 'text-neutral-400' : 'text-neutral-700'}`}>{t.literatureScore?.toFixed(3)}</td>
+                                  <td className={`p-4 text-center font-mono text-[11px] font-medium ${theme === 'dark' ? 'text-indigo-400' : 'text-indigo-700'}`}>{t.getScore?.toFixed(3)}</td>
+                                  <td className={`p-4 text-center font-mono text-[11px] font-bold ${theme === 'dark' ? 'text-rose-400' : 'text-rose-700'}`}>{t.priorityScore?.toFixed(3) || 'N/A'}</td>
                                   <td className="p-4 pr-8 text-right font-mono font-bold text-[12px] text-blue-600">{t.overallScore.toFixed(4)}</td>
                                 </tr>
                               </React.Fragment>
@@ -2726,7 +2924,7 @@ const App = () => {
                 <div className="space-y-6">
                   <div>
                     <h4 className="text-[12px] font-bold mb-2 text-black dark:text-neutral-200 uppercase tracking-tighter">Description</h4>
-                    <p className="text-[13px] text-neutral-900 dark:text-neutral-400 leading-relaxed">The Genetic Score represents aggregated genetic association evidence supporting a link between the gene and the selected disease.</p>
+                    <p className="text-[13px] text-neutral-900 dark:text-neutral-400 leading-relaxed">Max of genetic_association, somatic_mutation, and genetic_literature datatype scores from Open Targets. Reflects strength of evidence linking this gene to the disease through germline variants, somatic mutations, and genetics-informed literature.</p>
                   </div>
                   <div>
                     <h4 className="text-[12px] font-bold mb-2 text-black dark:text-neutral-200 uppercase tracking-tighter">Integrated Datasets</h4>
@@ -2763,7 +2961,7 @@ const App = () => {
                 <div className="space-y-6">
                   <div>
                     <h4 className="text-[12px] font-bold mb-2 text-black dark:text-neutral-200 uppercase tracking-tighter">Description</h4>
-                    <p className="text-[13px] text-neutral-900 dark:text-neutral-400 leading-relaxed">The Expression Score represents aggregated RNA expression evidence linking the gene to the selected disease.</p>
+                    <p className="text-[13px] text-neutral-900 dark:text-neutral-400 leading-relaxed">Calculated from Open Targets RNA expression data across all tissues. Combines expression strength (top 3 tissue average, log-normalized) and tissue selectivity (peak tissue vs mean). Higher score means strongly and selectively expressed.</p>
                   </div>
                   <div>
                     <h4 className="text-[12px] font-bold mb-2 text-neutral-800 dark:text-neutral-200 uppercase tracking-tighter">Derived From</h4>
@@ -2796,7 +2994,7 @@ const App = () => {
                 <div className="space-y-6">
                   <div>
                     <h4 className="text-[12px] font-bold mb-2 text-black dark:text-neutral-200 uppercase tracking-tighter">Description</h4>
-                    <p className="text-[13px] text-neutral-900 dark:text-neutral-400 leading-relaxed">The Drug Score represents evidence from pharmacological data linking the gene to therapeutic interventions or drug development activity.</p>
+                    <p className="text-[13px] text-neutral-900 dark:text-neutral-400 leading-relaxed">Derived from Open Targets tractability assessment. Reflects how druggable this gene is: Approved Drug (1.0), Advanced Clinical (0.85), Phase 1 Clinical (0.70), Structure with Ligand (0.55), High-Quality Pocket (0.40), Druggable Family (0.25), Unknown (0.10).</p>
                   </div>
                   <div>
                     <h4 className="text-[12px] font-bold mb-2 text-neutral-800 dark:text-neutral-200 uppercase tracking-tighter">Derived From</h4>
@@ -2829,7 +3027,7 @@ const App = () => {
                 <div className="space-y-6">
                   <div>
                     <h4 className="text-[12px] font-bold mb-2 text-black dark:text-neutral-200 uppercase tracking-tighter">Description</h4>
-                    <p className="text-[13px] text-neutral-900 dark:text-neutral-400 leading-relaxed">The Overall Score is a harmonized prioritization metric that integrates genetic, expression, and targetability data to rank targets by their therapeutic potential.</p>
+                    <p className="text-[13px] text-neutral-900 dark:text-neutral-400 leading-relaxed">Open Targets platform overall association score combining all their evidence datatypes.</p>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="p-4 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-100 dark:border-neutral-800">
@@ -2854,7 +3052,7 @@ const App = () => {
                 <div className="space-y-6">
                   <div>
                     <h4 className="text-[12px] font-bold mb-2 text-black dark:text-neutral-200 uppercase tracking-tighter">Description</h4>
-                    <p className="text-[13px] text-neutral-900 dark:text-neutral-400 leading-relaxed">Aggregated evidence from scientific publications, primarily sourced from Europe PMC and other literature mining tools.</p>
+                    <p className="text-[13px] text-neutral-900 dark:text-neutral-400 leading-relaxed">Literature datatype score from Open Targets. Reflects the volume and quality of published evidence associating this gene with the disease, sourced from Europe PMC text mining.</p>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="p-4 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-100 dark:border-neutral-800">
@@ -2870,157 +3068,69 @@ const App = () => {
               </section>
             )}
 
-            {activeScoreInfo === 'clinical' && (() => {
-              const geneData = researchState.targets.find(t => t.symbol === activeClinicalDetailGene);
-              if (!geneData) return (
-                <section className="space-y-4">
-                  <h3 className="text-[11px] font-bold uppercase text-rose-600 tracking-widest">Clinical Evidence</h3>
-                  <div className="p-4 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-100 dark:border-neutral-800 text-[11px] text-neutral-500">
-                    No clinical data available for this target.
-                  </div>
-                </section>
-              );
-              const drillDown = geneData.drillDown;
-              
-              // Prepare data for charts
-              const phaseData = drillDown.phase_breakdown ? Object.entries(drillDown.phase_breakdown).map(([name, value]) => ({ 
-                name: name.replace('PHASE', 'P'), 
-                value 
-              })) : [];
-              const sponsorData = drillDown.sponsor_breakdown ? Object.entries(drillDown.sponsor_breakdown).map(([name, value]) => ({ 
-                name, 
-                value 
-              })) : [];
-              const COLORS = ['#e11d48', '#f43f5e', '#fb7185', '#fda4af', '#fecdd3'];
-
-              return (
-                <section className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300 pb-10">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-[11px] font-bold uppercase text-rose-600 tracking-widest flex items-center gap-2">
-                      <Stethoscope className="w-4 h-4" /> Clinical Intelligence: {activeClinicalDetailGene}
-                    </h3>
-                  </div>
-
-                  {/* Phase Breakdown Bar Chart */}
-                  {phaseData.length > 0 && (
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Phase Distribution</h4>
-                        <div className="text-right">
-                          <span className="text-[10px] font-bold text-rose-600 block">{drillDown.trial_count} Total Trials</span>
-                          <span className="text-[9px] font-bold text-rose-400 block uppercase tracking-tighter">{drillDown.interventional_count || 0} Interventional</span>
-                        </div>
-                      </div>
-                      <div className="h-[180px] w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={phaseData} layout="vertical" margin={{ left: -20, right: 20 }}>
-                            <XAxis type="number" hide />
-                            <YAxis dataKey="name" type="category" width={40} tick={{ fontSize: 9, fontWeight: 'bold', fill: theme === 'dark' ? '#a3a3a3' : '#737373' }} axisLine={false} tickLine={false} />
-                            <RechartsTooltip 
-                              contentStyle={{ backgroundColor: theme === 'dark' ? '#171717' : '#fff', border: 'none', borderRadius: '8px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
-                              itemStyle={{ fontSize: '10px', fontWeight: 'bold' }}
-                              cursor={{ fill: 'transparent' }}
-                            />
-                            <Bar dataKey="value" fill="#e11d48" radius={[0, 4, 4, 0]} barSize={16} />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Sponsor Profile Donut Chart */}
-                  {sponsorData.length > 0 && (
-                    <div className="space-y-3">
-                      <h4 className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Sponsor Profile</h4>
-                      <div className="h-[180px] w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={sponsorData}
-                              cx="40%"
-                              cy="50%"
-                              innerRadius={50}
-                              outerRadius={70}
-                              paddingAngle={5}
-                              dataKey="value"
-                            >
-                              {sponsorData.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                              ))}
-                            </Pie>
-                            <RechartsTooltip 
-                              contentStyle={{ backgroundColor: theme === 'dark' ? '#171717' : '#fff', border: 'none', borderRadius: '8px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
-                              itemStyle={{ fontSize: '10px', fontWeight: 'bold' }}
-                            />
-                            <Legend verticalAlign="middle" align="right" layout="vertical" iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: 'bold', paddingLeft: '10px', color: theme === 'dark' ? '#a3a3a3' : '#737373' }} />
-                          </PieChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Key Investigational Drugs */}
-                  {drillDown.top_drugs && drillDown.top_drugs.length > 0 && (
-                    <div className="space-y-3">
-                      <h4 className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Key Investigational Drugs</h4>
-                      <div className="grid grid-cols-1 gap-2">
-                        {drillDown.top_drugs.map(drug => (
-                          <div key={drug.name} className="flex items-center justify-between p-3 rounded-xl bg-rose-50/50 dark:bg-rose-900/10 border border-rose-100/50 dark:border-rose-800/30">
-                            <span className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300">{drug.name}</span>
-                            <span className="text-[10px] font-black text-rose-600 dark:text-rose-400">{drug.count} Trials</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* AI Clinical Intelligence */}
-                  {drillDown.clinical_summary && (
-                    <div className="p-5 rounded-2xl bg-gradient-to-br from-rose-50 to-white dark:from-rose-950/20 dark:to-[#171717] border border-rose-100 dark:border-rose-900/30 shadow-sm">
-                      <div className="flex items-center gap-2 mb-3">
-                        <div className="p-1.5 rounded-lg bg-rose-100 dark:bg-rose-900/40">
-                          <DatabaseZap className="w-4 h-4 text-rose-600" />
-                        </div>
-                        <span className="text-[10px] font-black text-rose-600 uppercase tracking-widest">AI Clinical Intelligence</span>
-                      </div>
-                      <p className="text-[12px] text-neutral-700 dark:text-neutral-300 leading-relaxed italic font-medium">
-                        "{drillDown.clinical_summary}"
-                      </p>
-                    </div>
-                  )}
-
-                  {/* View All Trials Link */}
-                  <div className="pt-4">
-                    <a 
-                      href={`https://clinicaltrials.gov/search?cond=${encodeURIComponent(researchState.activeDisease?.name || '')}&term=${encodeURIComponent(activeClinicalDetailGene || '')}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center justify-center gap-2 w-full py-3 rounded-xl border border-neutral-200 dark:border-neutral-800 text-[11px] font-bold uppercase tracking-widest hover:bg-neutral-50 dark:hover:bg-neutral-900 transition-all text-neutral-600 dark:text-neutral-400"
-                    >
-                      View All Trials on ClinicalTrials.gov <ExternalLink className="w-4 h-4" />
-                    </a>
-                  </div>
-                </section>
-              );
-            })()}
-
-            {activeScoreInfo === 'novelty' && (
+            {activeScoreInfo === 'get_score' && (
               <section className="space-y-4">
-                <h3 className="text-[11px] font-bold uppercase text-indigo-600 tracking-widest">Novelty Score</h3>
+                <h3 className="text-[11px] font-bold uppercase text-indigo-600 tracking-widest">GET Score</h3>
                 <div className="space-y-6">
                   <div>
                     <h4 className="text-[12px] font-bold mb-2 text-black dark:text-neutral-200 uppercase tracking-tighter">Description</h4>
-                    <p className="text-[13px] text-neutral-900 dark:text-neutral-400 leading-relaxed">A metric representing the relative novelty of the target. Calculated as the inverse of literature support.</p>
+                    <p className="text-[13px] text-neutral-900 dark:text-neutral-400 leading-relaxed">Composite score calculated by GetGene combining Genetic (50%), Expression (25%), and Target tractability (25%). Represents the overall biological priority of this gene as a drug target independent of Open Targets overall score.</p>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="p-4 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-100 dark:border-neutral-800">
-                      <div className="text-[10px] font-bold text-neutral-400 uppercase mb-1">Range</div>
-                      <div className="text-lg font-bold text-indigo-600">0.0 — 1.0</div>
+                  <div className="space-y-4">
+                    <h4 className="text-[12px] font-bold mb-2 text-black dark:text-neutral-200 uppercase tracking-tighter">Weighting Breakdown</h4>
+                    <div className="space-y-3">
+                      <div className="p-4 rounded-xl border border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/50">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-[12px] font-bold text-neutral-900 dark:text-white">Genetic Association</span>
+                          <span className="text-[12px] font-bold text-indigo-600">50%</span>
+                        </div>
+                        <p className="text-[11px] text-neutral-500 leading-relaxed">Strength of evidence from GWAS and V2G mapping.</p>
+                      </div>
+                      <div className="p-4 rounded-xl border border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/50">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-[12px] font-bold text-neutral-900 dark:text-white">Expression Profile</span>
+                          <span className="text-[12px] font-bold text-indigo-600">25%</span>
+                        </div>
+                        <p className="text-[11px] text-neutral-500 leading-relaxed">Combined tissue expression and disease-specific enrichment.</p>
+                      </div>
+                      <div className="p-4 rounded-xl border border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/50">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-[12px] font-bold text-neutral-900 dark:text-white">Targetability</span>
+                          <span className="text-[12px] font-bold text-indigo-600">25%</span>
+                        </div>
+                        <p className="text-[11px] text-neutral-500 leading-relaxed">Assessment of druggability and known pharmacology.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {activeScoreInfo === 'priority' && (
+              <section className="space-y-4">
+                <h3 className="text-[11px] font-bold uppercase text-rose-600 tracking-widest">Priority Score</h3>
+                <div className="space-y-6">
+                  <div>
+                    <h4 className="text-[12px] font-bold mb-2 text-black dark:text-neutral-200 uppercase tracking-tighter">Description</h4>
+                    <p className="text-[13px] text-neutral-900 dark:text-neutral-400 leading-relaxed">Advanced prioritization combining biological evidence (GET Score) with real-world clinical and publication momentum. This score is designed to highlight targets that are not only biologically relevant but also have significant clinical research activity and recent publication growth.</p>
+                  </div>
+                  <div>
+                    <h4 className="text-[12px] font-bold mb-2 text-black dark:text-neutral-200 uppercase tracking-tighter">Calculation Formula</h4>
+                    <div className="p-4 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-100 dark:border-neutral-800 font-mono text-[12px] text-rose-600 leading-relaxed">
+                      Priority = (GET × 0.70) + (Interventional_Norm × 0.20) + (Velocity_Norm × 0.10)
                     </div>
                   </div>
                   <div>
-                    <h4 className="text-[12px] font-bold mb-2 text-black dark:text-neutral-200 uppercase tracking-tighter">Interpretation</h4>
-                    <p className="text-[13px] text-neutral-900 dark:text-neutral-400 leading-relaxed">Higher score indicates a target with strong biological association but limited literature coverage, suggesting high discovery potential.</p>
+                    <h4 className="text-[12px] font-bold mb-2 text-black dark:text-neutral-200 uppercase tracking-tighter">Components</h4>
+                    <ul className="list-disc list-inside text-[13px] text-neutral-900 dark:text-neutral-400 space-y-2">
+                      <li><span className="font-bold">GET Score (70%)</span>: The core biological priority score (Genetic + Expression + Targetability).</li>
+                      <li><span className="font-bold">Interventional Count (20%)</span>: Normalized count of interventional clinical trials. Reflects therapeutic interest and feasibility.</li>
+                      <li><span className="font-bold">Signal Velocity (10%)</span>: Normalized publication growth rate. Reflects current research momentum and "hotness" of the target.</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 className="text-[12px] font-bold mb-2 text-black dark:text-neutral-200 uppercase tracking-tighter">Normalization</h4>
+                    <p className="text-[13px] text-neutral-900 dark:text-neutral-400 leading-relaxed">Clinical and velocity metrics are normalized against the maximum value in the current target list to ensure relative ranking accuracy.</p>
                   </div>
                 </div>
               </section>
