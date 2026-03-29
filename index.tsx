@@ -1193,7 +1193,7 @@ const TargetDetailView = ({
           </button>
           <div className="space-y-1">
             <div className="flex items-center gap-3">
-              <h3 className="text-4xl font-black text-blue-600 dark:text-blue-50 tracking-tighter">{target.symbol}</h3>
+              <h3 className={`text-4xl font-black tracking-tighter ${theme === 'dark' ? 'text-blue-50' : 'text-blue-800'}`}>{target.symbol}</h3>
               <div className="px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 text-[10px] font-bold text-blue-600 uppercase">
                 Overall Score: {target.overallScore.toFixed(4)}
               </div>
@@ -1203,7 +1203,7 @@ const TargetDetailView = ({
                 </div>
               )}
             </div>
-            <p className={`text-[12px] font-bold uppercase tracking-wide ${theme === 'dark' ? 'text-neutral-500' : 'text-neutral-900'}`}>{target.name}</p>
+            <p className={`text-[12px] font-bold uppercase tracking-wide ${theme === 'dark' ? 'text-neutral-500' : 'text-black'}`}>{target.name}</p>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -1402,6 +1402,14 @@ const App = () => {
   useEffect(() => { if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight; }, [messages]);
   const [isExporting, setIsExporting] = useState(false);
   const [focusSubPage, setFocusSubPage] = useState<'main' | 'literature' | 'clinical'>('main');
+
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [theme]);
 
   const handleDrillDown = async (symbol: string) => {
     const target = researchState.targets.find(t => t.symbol === symbol);
@@ -2523,12 +2531,12 @@ const App = () => {
            <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-5 space-y-6">
               {messages.map((m, i) => (
                 <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
-                  <div className={`max-w-[95%] p-4 rounded-xl text-[14px] shadow-sm ${m.role === 'user' ? 'bg-blue-600 text-white' : (theme === 'dark' ? 'bg-[#171717] border border-neutral-800 text-neutral-200' : 'bg-white text-black border border-neutral-200 shadow-sm')}`}>
+                  <div className={`max-w-[80%] inline-block px-4 py-2.5 rounded-xl text-[14px] shadow-sm ${m.role === 'user' ? 'bg-blue-600 text-white' : (theme === 'dark' ? 'bg-[#171717] border border-neutral-800 text-neutral-200' : 'bg-white text-black border border-neutral-200 shadow-sm')}`}>
                     <div className="markdown-body prose prose-sm prose-neutral dark:prose-invert max-w-none text-neutral-900 dark:text-neutral-200">
                       <Markdown>{m.content}</Markdown>
                     </div>
                     {m.options && (
-                      <div className="mt-4 space-y-2">
+                      <div className="mt-3 space-y-2">
                         {m.options.map(o => (
                           <button key={o.id} onClick={() => handleToolExecution('get_genes', { id: o.id, name: o.name }).then(res => setMessages(prev => [...prev, { role: 'assistant', content: typeof res === 'string' ? res : res.content, timestamp: new Date() }]))} className="w-full p-3 rounded-lg bg-blue-600/10 border border-blue-600/20 text-left text-[11px] font-semibold uppercase hover:bg-blue-600 hover:text-white transition-all shadow-sm">
                             {o.name}
@@ -2537,7 +2545,7 @@ const App = () => {
                       </div>
                     )}
                     {m.filterOptions && (
-                      <div className="mt-4 grid grid-cols-1 gap-2">
+                      <div className="mt-3 grid grid-cols-1 gap-2">
                         {m.filterOptions.map((f, idx) => (
                           <button 
                             key={idx} 
