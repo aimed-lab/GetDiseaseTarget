@@ -20,6 +20,8 @@ export interface DrillDownData {
   top_drugs?: { name: string; count: number }[];
   sponsor_breakdown?: Record<string, number>;
   clinical_summary?: string;
+  clinical_flags?: string[];
+  total_trials_globally?: number;
 }
 
 export interface Target {
@@ -37,6 +39,7 @@ export interface Target {
   priorityScore?: number;
   pathways: Pathway[];
   drillDown?: DrillDownData;
+  clinical_flags?: string[];
   usefulness?: Record<string, 'useful' | 'not-useful' | 'pinned'>;
   x?: number;
   y?: number;

@@ -63,6 +63,7 @@ import {
   Volume2,
   Microscope,
   AlertCircle,
+  Flag,
   Maximize,
   TableProperties,
   Plus,
@@ -1045,6 +1046,23 @@ const TargetDetailView = ({
                   </div>
                 )}
 
+                {target.clinical_flags && target.clinical_flags.length > 0 && (
+                  <div className={`p-8 rounded-3xl border ${theme === 'dark' ? 'bg-rose-900/10 border-rose-500/30' : 'bg-rose-50 border-rose-200'}`}>
+                    <div className="flex items-center gap-3 mb-6">
+                      <Flag className="w-6 h-6 text-rose-500" />
+                      <h4 className="text-[12px] font-bold uppercase text-rose-600 tracking-widest">Clinical Strategic Flags</h4>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {target.clinical_flags.map((flag, i) => (
+                        <div key={i} className={`flex items-start gap-3 p-4 rounded-2xl ${theme === 'dark' ? 'bg-rose-950/40 border border-rose-900/50' : 'bg-white border border-rose-100 shadow-sm'}`}>
+                          <div className="mt-1 p-1 rounded-full bg-rose-500/10"><AlertCircle className="w-3.5 h-3.5 text-rose-600" /></div>
+                          <span className={`text-[13px] font-bold leading-tight ${theme === 'dark' ? 'text-rose-200' : 'text-rose-900'}`}>{flag}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                   <div className="space-y-6">
                     <h4 className="text-[12px] font-bold uppercase text-neutral-500 tracking-widest border-b pb-2 flex items-center gap-2">
@@ -1282,6 +1300,23 @@ const TargetDetailView = ({
                 <p className={`text-[12px] leading-relaxed italic ${theme === 'dark' ? 'text-neutral-300' : 'text-neutral-700'}`}>
                   {target.drillDown.clinical_summary}
                 </p>
+              </div>
+            )}
+
+            {target.clinical_flags && target.clinical_flags.length > 0 && (
+              <div className="mt-6 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Flag className="w-4 h-4 text-rose-500" />
+                  <h5 className="text-[10px] font-bold uppercase text-rose-600 tracking-widest">Strategic Flags</h5>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {target.clinical_flags.map((flag, i) => (
+                    <div key={i} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border ${theme === 'dark' ? 'bg-rose-950/20 border-rose-900/40 text-rose-300' : 'bg-rose-50 border-rose-100 text-rose-700'}`}>
+                      <AlertCircle className="w-3 h-3" />
+                      <span className="text-[10px] font-bold leading-none">{flag}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -1563,14 +1598,18 @@ const App = () => {
       };
       const phaseMap: Record<string, number> = { 'N/A': 0, 'EARLY_PHASE1': 1, 'PHASE1': 2, 'PHASE2': 3, 'PHASE3': 4, 'PHASE4': 5 };
 
-      const drillDownFields = ['paper_count', 'recent_paper_count', 'latest_publication_date', 'total_signals', 'recent_signals', 'signal_velocity'];
+      const drillDownFields = ['paper_count', 'recent_paper_count', 'latest_publication_date', 'total_signals', 'recent_signals', 'signal_velocity', 'clinical_flags'];
 
       result = result.filter(t => {
         return researchState.filters.every(f => {
           let val: any;
           const internalField = fieldMapping[f.field] || f.field;
           if (drillDownFields.includes(f.field)) {
-            val = (t.drillDown as any)?.[f.field];
+            if (f.field === 'clinical_flags') {
+              val = t.clinical_flags || [];
+            } else {
+              val = (t.drillDown as any)?.[f.field];
+            }
             if (f.field === 'max_phase') val = phaseMap[val || 'N/A'];
             if (f.field === 'signal_velocity' && typeof val === 'string') val = parseFloat(val.replace('%', ''));
           } else {
@@ -1578,6 +1617,12 @@ const App = () => {
           }
           
           if (val === undefined) return false;
+
+          if (f.field === 'clinical_flags') {
+            if (f.operator === 'contains') return val.includes(f.stringValue);
+            if (f.operator === 'not_contains') return !val.includes(f.stringValue);
+            return true;
+          }
 
           if (f.field === 'latest_publication_date' && typeof val === 'string' && f.value) {
             const valYear = parseInt(val.substring(0, 4));
@@ -1886,7 +1931,39 @@ const App = () => {
       const getScore = t.getScore || 0;
       const priorityScore = (getScore * 0.70) + (interventional_normalized * 0.20) + (velocity_normalized * 0.10);
 
-      return { ...t, priorityScore };
+      const clinical_flags: string[] = [];
+      if (t.drillDown) {
+        const dd = t.drillDown;
+        const total_trials_globally = dd.total_trials_globally || 0;
+        const max_phase = dd.max_phase || 'N/A';
+
+        // Flag 1 — "Clinically Unexplored"
+        if (t.geneticScore > 0.7 && interventional === 0) {
+          clinical_flags.push("Strong genetic evidence but no interventional trials in this disease");
+        }
+
+        // Flag 2 — "Pipeline Elsewhere"
+        if (interventional === 0 && total_trials_globally > 10) {
+          clinical_flags.push("Active clinical pipeline exists but not in this disease");
+        }
+
+        // Flag 3 — "Clinically Validated"
+        if (max_phase === 'PHASE4' || max_phase === 'PHASE3') {
+          clinical_flags.push("Advanced clinical validation in this disease");
+        }
+
+        // Flag 4 — "Early Stage Only"
+        if (interventional > 0 && (max_phase === 'PHASE1' || max_phase === 'EARLY_PHASE1')) {
+          clinical_flags.push("Clinical pursuit is early stage only");
+        }
+
+        // Flag 5 — "High Tractability Gap"
+        if (t.targetScore === 1.0 && interventional === 0) {
+          clinical_flags.push("Approved drug exists but no trials in this disease");
+        }
+      }
+
+      return { ...t, priorityScore, clinical_flags };
     });
   };
 
@@ -2012,15 +2089,17 @@ const App = () => {
           if (!target) return `Target ${symbol} not found in current list.`;
           if (!target.drillDown) {
             const data = await api.getDrillDownData(symbol, researchState.activeDisease?.name || '');
+            const updatedTargets = calculatePriorityScores(researchState.targets.map(t => t.symbol === symbol ? { ...t, drillDown: data } : t));
             setResearchState(prev => ({
               ...prev,
-              targets: prev.targets.map(t => t.symbol === symbol ? { ...t, drillDown: data } : t)
+              targets: updatedTargets
             }));
-            target = { ...target, drillDown: data };
+            target = updatedTargets.find(t => t.symbol === symbol)!;
           }
           return `### Detailed Evidence for ${symbol} (${target.name})\n` +
-            `- **Overall Score**: ${target.overallScore.toFixed(4)}\n` +
+            `- **Priority Score**: ${target.priorityScore?.toFixed(4)}\n` +
             `- **Genetic Score**: ${target.geneticScore.toFixed(4)}\n` +
+            `- **Clinical Flags**: ${target.clinical_flags?.join(', ') || 'None'}\n` +
             `- **Paper Count**: ${target.drillDown?.paper_count}\n` +
             `- **Recent Papers**: ${target.drillDown?.recent_paper_count}\n` +
             `- **Latest Publication**: ${target.drillDown?.latest_publication_date}\n\n`;
@@ -2031,7 +2110,7 @@ const App = () => {
           return `Active Filters: ${filters || 'None'}\nActive Sorts: ${sorts || 'None'}\nTotal matching genes: ${displayTargets.length}`;
         }
         case 'apply_filters': {
-          const drillDownFields = ['paper_count', 'recent_paper_count', 'latest_publication_date', 'total_signals', 'recent_signals', 'signal_velocity'];
+          const drillDownFields = ['paper_count', 'recent_paper_count', 'latest_publication_date', 'total_signals', 'recent_signals', 'signal_velocity', 'clinical_flags'];
           const needsDrillDown = args.conditions.some((c: any) => 
             drillDownFields.includes(c.field)
           );
@@ -2039,10 +2118,10 @@ const App = () => {
             const targetsToFetch = researchState.targets.filter(t => !t.drillDown);
             if (targetsToFetch.length > 0) {
               const results = await Promise.all(targetsToFetch.map(t => api.getDrillDownData(t.symbol, researchState.activeDisease?.name || '')));
-              const updatedTargets = researchState.targets.map(t => {
+              const updatedTargets = calculatePriorityScores(researchState.targets.map(t => {
                 const idx = targetsToFetch.findIndex(tf => tf.symbol === t.symbol);
                 return idx >= 0 ? { ...t, drillDown: results[idx] } : t;
-              });
+              }));
               setResearchState(prev => ({ ...prev, targets: updatedTargets, filters: [...prev.filters, ...args.conditions] }));
             } else {
               setResearchState(prev => ({ ...prev, filters: [...prev.filters, ...args.conditions] }));
@@ -2073,18 +2152,29 @@ const App = () => {
         case 'preview_filter_effect': {
           // Simulate filtering
           const phaseMap: Record<string, number> = { 'N/A': 0, 'EARLY_PHASE1': 1, 'PHASE1': 2, 'PHASE2': 3, 'PHASE3': 4, 'PHASE4': 5 };
-          const drillDownFields = ['paper_count', 'recent_paper_count', 'latest_publication_date', 'total_signals', 'recent_signals', 'signal_velocity'];
+          const drillDownFields = ['paper_count', 'recent_paper_count', 'latest_publication_date', 'total_signals', 'recent_signals', 'signal_velocity', 'clinical_flags'];
           const tempFiltered = displayTargets.filter(t => {
             let val: any;
             const internalField = fieldMapping[args.condition.field] || args.condition.field;
             if (drillDownFields.includes(args.condition.field)) {
-              val = (t.drillDown as any)?.[args.condition.field];
+              if (args.condition.field === 'clinical_flags') {
+                val = t.clinical_flags || [];
+              } else {
+                val = (t.drillDown as any)?.[args.condition.field];
+              }
               if (args.condition.field === 'max_phase') val = phaseMap[val || 'N/A'];
               if (args.condition.field === 'signal_velocity' && typeof val === 'string') val = parseFloat(val.replace('%', ''));
             } else {
               val = (t as any)[internalField];
             }
             if (val === undefined) return false;
+
+            if (args.condition.field === 'clinical_flags') {
+              if (args.condition.operator === 'contains') return val.includes(args.condition.stringValue);
+              if (args.condition.operator === 'not_contains') return !val.includes(args.condition.stringValue);
+              return true;
+            }
+
             const compareValue = args.condition.boolValue !== undefined ? args.condition.boolValue : (args.condition.stringValue !== undefined ? args.condition.stringValue : args.condition.value);
             if (args.condition.operator === '>') return val > compareValue;
             if (args.condition.operator === '<') return val < compareValue;
@@ -2095,7 +2185,7 @@ const App = () => {
         }
         case 'filter_targets': {
           // Legacy support: now updates state
-          const drillDownFields = ['paper_count', 'recent_paper_count', 'latest_publication_date', 'total_signals', 'recent_signals', 'signal_velocity'];
+          const drillDownFields = ['paper_count', 'recent_paper_count', 'latest_publication_date', 'total_signals', 'recent_signals', 'signal_velocity', 'clinical_flags'];
           const needsDrillDown = args.conditions.some((c: any) => 
             drillDownFields.includes(c.field)
           );
@@ -2103,10 +2193,10 @@ const App = () => {
             const targetsToFetch = researchState.targets.filter(t => !t.drillDown);
             if (targetsToFetch.length > 0) {
               const results = await Promise.all(targetsToFetch.map(t => api.getDrillDownData(t.symbol, researchState.activeDisease?.name || '')));
-              const updatedTargets = researchState.targets.map(t => {
+              const updatedTargets = calculatePriorityScores(researchState.targets.map(t => {
                 const idx = targetsToFetch.findIndex(tf => tf.symbol === t.symbol);
                 return idx >= 0 ? { ...t, drillDown: results[idx] } : t;
-              });
+              }));
               setResearchState(prev => ({ ...prev, targets: updatedTargets, filters: args.conditions }));
             } else {
               setResearchState(prev => ({ ...prev, filters: args.conditions }));
@@ -2272,12 +2362,12 @@ const App = () => {
         { name: 'update_view', parameters: { type: Type.OBJECT, properties: { mode: { type: Type.STRING, enum: ['list', 'correlation', 'enrichment', 'graph', 'terrain', 'survival', 'raw'] } }, required: ['mode'] } },
         { name: 'get_target_list', parameters: { type: Type.OBJECT, properties: { limit: { type: Type.NUMBER } } } },
         { name: 'get_active_filters', parameters: { type: Type.OBJECT, properties: {} } },
-        { name: 'apply_filters', parameters: { type: Type.OBJECT, properties: { conditions: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { field: { type: Type.STRING }, operator: { type: Type.STRING, enum: ['>', '<', '>=', '<=', '=', '!=', 'between'] }, value: { type: Type.NUMBER }, value2: { type: Type.NUMBER }, boolValue: { type: Type.BOOLEAN }, stringValue: { type: Type.STRING } }, required: ['field', 'operator'] } }, logic: { type: Type.STRING, enum: ['AND', 'OR'] } }, required: ['conditions'] } },
+        { name: 'apply_filters', parameters: { type: Type.OBJECT, properties: { conditions: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { field: { type: Type.STRING }, operator: { type: Type.STRING, enum: ['>', '<', '>=', '<=', '=', '!=', 'between', 'contains', 'not_contains'] }, value: { type: Type.NUMBER }, value2: { type: Type.NUMBER }, boolValue: { type: Type.BOOLEAN }, stringValue: { type: Type.STRING } }, required: ['field', 'operator'] } }, logic: { type: Type.STRING, enum: ['AND', 'OR'] } }, required: ['conditions'] } },
         { name: 'remove_filters', parameters: { type: Type.OBJECT, properties: { fields: { type: Type.ARRAY, items: { type: Type.STRING } }, all: { type: Type.BOOLEAN } } } },
         { name: 'replace_filters', parameters: { type: Type.OBJECT, properties: { old_field: { type: Type.STRING }, new_condition: { type: Type.OBJECT, properties: { field: { type: Type.STRING }, operator: { type: Type.STRING }, value: { type: Type.NUMBER }, boolValue: { type: Type.BOOLEAN }, stringValue: { type: Type.STRING } } } }, required: ['old_field', 'new_condition'] } },
         { name: 'reset_target_list_view', parameters: { type: Type.OBJECT, properties: {} } },
         { name: 'preview_filter_effect', parameters: { type: Type.OBJECT, properties: { condition: { type: Type.OBJECT, properties: { field: { type: Type.STRING }, operator: { type: Type.STRING }, value: { type: Type.NUMBER } } } }, required: ['condition'] } },
-        { name: 'filter_targets', parameters: { type: Type.OBJECT, properties: { conditions: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { field: { type: Type.STRING }, operator: { type: Type.STRING, enum: ['>', '<', '>=', '<=', '=', '!=', 'between'] }, value: { type: Type.NUMBER }, value2: { type: Type.NUMBER }, boolValue: { type: Type.BOOLEAN }, stringValue: { type: Type.STRING } }, required: ['field', 'operator'] } }, logic: { type: Type.STRING, enum: ['AND', 'OR'] } }, required: ['conditions'] } },
+        { name: 'filter_targets', parameters: { type: Type.OBJECT, properties: { conditions: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { field: { type: Type.STRING }, operator: { type: Type.STRING, enum: ['>', '<', '>=', '<=', '=', '!=', 'between', 'contains', 'not_contains'] }, value: { type: Type.NUMBER }, value2: { type: Type.NUMBER }, boolValue: { type: Type.BOOLEAN }, stringValue: { type: Type.STRING } }, required: ['field', 'operator'] } }, logic: { type: Type.STRING, enum: ['AND', 'OR'] } }, required: ['conditions'] } },
         { name: 'sort_targets', parameters: { type: Type.OBJECT, properties: { sorts: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { field: { type: Type.STRING }, direction: { type: Type.STRING, enum: ['asc', 'desc'] } }, required: ['field', 'direction'] } } }, required: ['sorts'] } },
         { name: 'compare_targets', parameters: { type: Type.OBJECT, properties: { symbols: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ['symbols'] } },
         { name: 'summarize_targets', parameters: { type: Type.OBJECT, properties: { target_set: { type: Type.STRING, enum: ['current', 'filtered', 'top_literature', 'high_overall_low_target'] } }, required: ['target_set'] } },
@@ -2309,6 +2399,13 @@ const App = () => {
       - Scores (0.0 - 1.0): overall_score, get_score (50% Genetic, 25% Exp, 25% Target), genetic_score, literature_score, expression_score, target_score.
       - Evidence Metrics: 
         - Literature: paper_count (Europe PMC count), recent_paper_count (Europe PMC 3y), total_signals (Literature Count), recent_signals (Recent signals), signal_velocity (Velocity percentage), latest_publication_date (string/date).
+        - Clinical Flags (array of strings): clinical_flags. Use operator 'contains' or 'not_contains' with stringValue.
+          Possible flags:
+          - "Strong genetic evidence but no interventional trials in this disease"
+          - "Active clinical pipeline exists but not in this disease"
+          - "Advanced clinical validation in this disease"
+          - "Clinical pursuit is early stage only"
+          - "Approved drug exists but no trials in this disease"
       
       Interpretation Rules:
       - Comparison: "greater than", "above", "more than" (>= or >); "less than", "below" (<= or <); "equal to" (=); "not equal to" (!=).

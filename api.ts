@@ -297,7 +297,12 @@ export const api = {
           diseaseName
         )}&query.term=${encodeURIComponent(symbol)}&pageSize=100&countTotal=true&fields=${fields}`;
 
-        const ctRes = await fetch(ctUrl);
+        const globalCtUrl = `https://clinicaltrials.gov/api/v2/studies?query.term=${encodeURIComponent(symbol)}&pageSize=0&countTotal=true`;
+
+        const [ctRes, globalCtRes] = await Promise.all([
+          fetch(ctUrl),
+          fetch(globalCtUrl)
+        ]);
 
         if (ctRes.ok) {
           const ctData = await ctRes.json();
@@ -359,6 +364,11 @@ export const api = {
           drillDown.active_trial_present = studies.some((s: any) =>
             activeStatuses.includes(s.protocolSection?.statusModule?.overallStatus)
           );
+        }
+
+        if (globalCtRes.ok) {
+          const globalCtData = await globalCtRes.json();
+          drillDown.total_trials_globally = globalCtData.totalCount || 0;
         }
       } catch (err) {
         console.error('ClinicalTrials fetch failed:', err);
